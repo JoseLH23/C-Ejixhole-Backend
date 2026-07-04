@@ -37,11 +37,17 @@ class Reservacion(Base):
         # activa (pendiente o confirmada) a la vez. Índice único parcial,
         # aplicado a nivel de base de datos para evitar condiciones de
         # carrera si dos operadores crean una reservación al mismo tiempo.
+        # sqlite_where se agrega además de postgresql_where para que las
+        # pruebas con SQLite en memoria repliquen el mismo comportamiento
+        # parcial que tendrás en Postgres real (sin esto, SQLite crearía
+        # un índice único NO parcial y bloquearía casos válidos, como un
+        # cliente con una reservación cancelada + una nueva activa).
         Index(
             "ux_reservaciones_una_activa_por_cliente",
             "cliente_id",
             unique=True,
             postgresql_where=text("estado IN ('pendiente', 'confirmada')"),
+            sqlite_where=text("estado IN ('pendiente', 'confirmada')"),
         ),
     )
 
