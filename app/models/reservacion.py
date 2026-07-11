@@ -4,13 +4,11 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     Numeric,
     String,
     Text,
     func,
-    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -19,6 +17,7 @@ from app.database import Base
 ESTADOS_RESERVACION = ("pendiente", "confirmada", "completada", "cancelada")
 ESTADOS_ACTIVOS = ("pendiente", "confirmada")
 ORIGENES_RESERVACION = ("recepcion", "recepcion_express", "portal", "telefono")
+TIPOS_RESERVACION = ("entrada", "camping", "hospedaje")
 
 
 class Reservacion(Base):
@@ -33,35 +32,50 @@ class Reservacion(Base):
         CheckConstraint(
             f"origen IN {ORIGENES_RESERVACION}", name="ck_reservaciones_origen_valido"
         ),
-        # Regla de negocio: un cliente solo puede tener una reservación
-        # activa (pendiente o confirmada) a la vez. Índice único parcial,
-        # aplicado a nivel de base de datos para evitar condiciones de
-        # carrera si dos operadores crean una reservación al mismo tiempo.
-        # sqlite_where se agrega además de postgresql_where para que las
-        # pruebas con SQLite en memoria repliquen el mismo comportamiento
-        # parcial que tendrás en Postgres real (sin esto, SQLite crearía
-        # un índice único NO parcial y bloquearía casos válidos, como un
-        # cliente con una reservación cancelada + una nueva activa).
-        Index(
-            "ux_reservaciones_una_activa_por_cliente",
-            "cliente_id",
-            unique=True,
-            postgresql_where=text("estado IN ('pendiente', 'confirmada')"),
-            sqlite_where=text("estado IN ('pendiente', 'confirmada')"),
+        CheckConstraint(
+            f"tipo_reservacion IN {TIPOS_RESERVACION}", name="ck_reservaciones_tipo_valido"
         ),
+        # NOTA (decisión explícita del negocio, ver docs/portal-publico-fase-1.md):
+        # antes existía aquí un índice único que impedía que un mismo
+        # cliente tuviera más de una reservación activa a la vez. Se
+        # eliminó a propósito: con el portal público, un cliente debe
+        # poder tener varias reservaciones activas simultáneas (ej. una
+        # visita de un día la próxima semana Y un camping dos meses
+        # después). Por eso el sistema exige contacto real del cliente
+        # (teléfono/email) — para poder resolver cualquier choque
+        # manualmente en vez de bloquearlo por regla.
     )
 
     id = Column(Integer, primary_key=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     servicio_id = Column(Integer, ForeignKey("servicios.id"), nullable=False, index=True)
-    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    # Nullable: las reservaciones internas siempre lo llenan (empleado
+    # que la capturó). Las del portal público lo dejan vacío — nadie
+    # del personal la creó, la hizo el visitante directamente.
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    # Nullable: solo se llena cuando tipo_reservacion == "hospedaje".
+    # Camping y entrada no tienen unidad individual (sin límite de cupo).
+    unidad_hospedaje_id = Column(
+        Integer, ForeignKey("unidades_hospedaje.id"), nullable=True, index=True
+    )
 
     fecha_reservacion = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # fecha_visita se mantiene obligatoria y NUNCA se elimina — todos los
+    # Reportes y el Dashboard ya la usan. Para reservaciones nuevas, el
+    # servicio la llena automáticamente igual a fecha_llegada, así que
+    # nada de lo existente necesita cambiar. fecha_llegada/fecha_salida
+    # son las que habilitan el cálculo por noches (camping/hospedaje).
     fecha_visita = Column(Date, nullable=False, index=True)
+    fecha_llegada = Column(Date, nullable=True, index=True)
+    fecha_salida = Column(Date, nullable=True)
     num_personas = Column(Integer, nullable=False)
 
     estado = Column(String(20), nullable=False, default="pendiente")
     origen = Column(String(30), nullable=False, default="recepcion")
+    # Default "entrada" por compatibilidad con filas ya existentes
+    # (todas las reservaciones de antes de esta entrega son, en la
+    # práctica, visitas de un día — nunca hospedaje ni camping).
+    tipo_reservacion = Column(String(20), nullable=False, default="entrada")
 
     total = Column(Numeric(10, 2), nullable=False)
     monto_pagado = Column(Numeric(10, 2), nullable=False, default=0)
@@ -75,6 +89,7 @@ class Reservacion(Base):
 
     cliente = relationship("Cliente", back_populates="reservaciones")
     servicio = relationship("Servicio", back_populates="reservaciones")
+    unidad_hospedaje = relationship("UnidadHospedaje", back_populates="reservaciones")
     pagos = relationship("Pago", back_populates="reservacion")
 
     @property

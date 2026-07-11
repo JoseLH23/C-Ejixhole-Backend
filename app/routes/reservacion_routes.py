@@ -1,8 +1,9 @@
 """
-Rutas de Reservaciones. Sin autenticación por ahora, igual que
-Clientes (el módulo Auth/Usuarios todavía no existe). El creador de
-la reservación (usuario_id) se manda explícito en el body mientras
-tanto — ver nota en app/schemas/reservacion.py.
+Rutas de Reservaciones. Protegidas con JWT + rol: admin y operador
+únicamente (ver docs/modulos/permisos-por-rol.md). El creador de la
+reservación (usuario_id) se sigue mandando explícito en el body — ver
+nota en app/schemas/reservacion.py sobre por qué no se toma del token
+todavía.
 """
 from datetime import date
 from typing import Optional
@@ -11,10 +12,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_roles
 from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut
 from app.services.reservacion_service import ReservacionService
 
-router = APIRouter(prefix="/reservaciones", tags=["Reservaciones"])
+router = APIRouter(
+    prefix="/reservaciones",
+    tags=["Reservaciones"],
+    dependencies=[Depends(require_roles("admin", "operador"))],
+)
 
 
 @router.post("", response_model=ReservacionOut, status_code=201)
@@ -24,7 +30,10 @@ def crear_reservacion(data: ReservacionCreate, db: Session = Depends(get_db)):
         cliente_id=data.cliente_id,
         servicio_id=data.servicio_id,
         usuario_id=data.usuario_id,
-        fecha_visita=data.fecha_visita,
+        tipo_reservacion=data.tipo_reservacion,
+        fecha_llegada=data.fecha_llegada,
+        fecha_salida=data.fecha_salida,
+        unidad_hospedaje_id=data.unidad_hospedaje_id,
         num_personas=data.num_personas,
         origen=data.origen,
         notas=data.notas,

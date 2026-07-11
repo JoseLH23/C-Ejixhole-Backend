@@ -48,7 +48,27 @@ def db_session():
 
 @pytest.fixture()
 def client(db_session):
-    return TestClient(app)
+    """
+    Cliente HTTP autenticado por defecto (las rutas ahora exigen JWT).
+    """
+    from app.core.security import create_access_token
+
+    rol = Rol(nombre="admin", descripcion="Admin de prueba")
+    db_session.add(rol)
+    db_session.commit()
+    db_session.refresh(rol)
+    usuario = Usuario(
+        nombre="Usuario Test",
+        email="test-reservaciones@ejixhole.com",
+        password_hash="no-se-usa-en-estos-tests",
+        rol_id=rol.id,
+    )
+    db_session.add(usuario)
+    db_session.commit()
+    db_session.refresh(usuario)
+    token = create_access_token(subject=usuario.email, rol=rol.nombre)
+
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.fixture()
@@ -70,7 +90,9 @@ def setup_basico(db_session):
     cliente = Cliente(nombre="Cliente Test", telefono="5550001111")
     db_session.add(cliente)
 
-    servicio = Servicio(nombre="Tour Huasteca", precio="500.00", capacidad_maxima=10)
+    servicio = Servicio(
+        nombre="Acceso al parque", precio="50.00", capacidad_maxima=10, categoria="entrada", reservable=True
+    )
     db_session.add(servicio)
 
     db_session.commit()
@@ -86,7 +108,9 @@ def _payload(setup_basico, **overrides):
         "cliente_id": setup_basico["cliente"].id,
         "servicio_id": setup_basico["servicio"].id,
         "usuario_id": setup_basico["usuario"].id,
-        "fecha_visita": "2026-08-15",
+        "tipo_reservacion": "entrada",
+        "fecha_llegada": "2026-08-15",
+        "fecha_salida": "2026-08-15",
         "num_personas": 4,
         "origen": "recepcion",
     }
@@ -100,8 +124,8 @@ def test_crear_reservacion(client, setup_basico):
     assert response.status_code == 201
     data = response.json()
     assert data["estado"] == "pendiente"
-    assert data["total"] == "2000.00"  # 500 * 4
-    assert data["saldo_pendiente"] == "2000.00"
+    assert data["total"] == "200.00"  # $50 entrada x 4 personas (1 día)
+    assert data["saldo_pendiente"] == "200.00"
 
 
 def test_crear_reservacion_cliente_inexistente(client, setup_basico):
@@ -120,12 +144,29 @@ def test_crear_reservacion_excede_capacidad(client, setup_basico):
     assert "capacidad" in response.json()["detail"].lower() or "personas" in response.json()["detail"].lower()
 
 
-def test_una_reservacion_activa_por_cliente(client, setup_basico):
+def test_cliente_puede_tener_varias_reservaciones_activas(client, setup_basico):
+    """
+    Reemplaza test_una_reservacion_activa_por_cliente (removido):
+    decisión explícita del negocio, ver docs/portal-publico-fase-1.md.
+    Un cliente ahora SÍ puede tener varias reservaciones pendientes o
+    confirmadas al mismo tiempo — el sistema confía en que el contacto
+    real del cliente (teléfono/email) permite resolver cualquier
+    choque manualmente en vez de bloquearlo por regla.
+    """
     primera = client.post("/reservaciones", json=_payload(setup_basico))
     assert primera.status_code == 201
+    assert primera.json()["estado"] == "pendiente"
 
-    segunda = client.post("/reservaciones", json=_payload(setup_basico, fecha_visita="2026-09-01"))
-    assert segunda.status_code == 409
+    segunda = client.post(
+        "/reservaciones",
+        json=_payload(setup_basico, fecha_llegada="2026-09-01", fecha_salida="2026-09-01"),
+    )
+    assert segunda.status_code == 201
+    assert segunda.json()["estado"] == "pendiente"
+
+    # Ambas conviven activas — antes, la segunda hubiera dado 409.
+    todas = client.get("/reservaciones", params={"cliente_id": setup_basico["cliente"].id}).json()
+    assert len(todas) == 2
 
 
 def test_nueva_reservacion_permitida_tras_cancelar_la_anterior(client, setup_basico):
@@ -136,7 +177,10 @@ def test_nueva_reservacion_permitida_tras_cancelar_la_anterior(client, setup_bas
     )
     assert cancelada.status_code == 200
 
-    segunda = client.post("/reservaciones", json=_payload(setup_basico, fecha_visita="2026-09-01"))
+    segunda = client.post(
+        "/reservaciones",
+        json=_payload(setup_basico, fecha_llegada="2026-09-01", fecha_salida="2026-09-01"),
+    )
     assert segunda.status_code == 201
 
 
@@ -186,3 +230,182 @@ def test_no_se_puede_reservar_para_cliente_desactivado(client, setup_basico, db_
     response = client.post("/reservaciones", json=_payload(setup_basico))
 
     assert response.status_code == 400
+
+
+# --- Permisos por rol (mini-entrega) ---------------------------------
+
+
+def test_operador_puede_listar_reservaciones(db_session):
+    rol = Rol(nombre="operador", descripcion="Operador")
+    db_session.add(rol)
+    db_session.commit()
+    db_session.refresh(rol)
+    usuario = Usuario(
+        nombre="Operador Permiso", email="operador-permiso-reservaciones@ejixhole.com",
+        password_hash="x", rol_id=rol.id,
+    )
+    db_session.add(usuario)
+    db_session.commit()
+    db_session.refresh(usuario)
+    from app.core.security import create_access_token
+    token = create_access_token(subject=usuario.email, rol=rol.nombre)
+
+    response = TestClient(app, headers={"Authorization": f"Bearer {token}"}).get("/reservaciones")
+    assert response.status_code == 200
+
+
+def test_cajero_no_puede_acceder_a_reservaciones(db_session):
+    rol = Rol(nombre="cajero", descripcion="Cajero")
+    db_session.add(rol)
+    db_session.commit()
+    db_session.refresh(rol)
+    usuario = Usuario(
+        nombre="Cajero Permiso", email="cajero-permiso-reservaciones@ejixhole.com",
+        password_hash="x", rol_id=rol.id,
+    )
+    db_session.add(usuario)
+    db_session.commit()
+    db_session.refresh(usuario)
+    from app.core.security import create_access_token
+    token = create_access_token(subject=usuario.email, rol=rol.nombre)
+
+    response = TestClient(app, headers={"Authorization": f"Bearer {token}"}).get("/reservaciones")
+    assert response.status_code == 403
+
+
+# --- Portal público: tipos de reservación, precios y disponibilidad --
+
+
+@pytest.fixture()
+def setup_hospedaje(db_session, setup_basico):
+    """Agrega una UnidadHospedaje real (Cabaña 1) al fixture básico."""
+    from app.models.unidad_hospedaje import UnidadHospedaje
+
+    unidad = UnidadHospedaje(nombre="Cabaña 1", capacidad_maxima=4, precio_por_noche="800.00")
+    db_session.add(unidad)
+    db_session.commit()
+    db_session.refresh(unidad)
+    setup_basico["unidad"] = unidad
+    return setup_basico
+
+
+def test_precio_camping_incluye_entrada(client, setup_basico, db_session):
+    from app.models.servicio import Servicio
+
+    camping = Servicio(nombre="Camping", precio="100.00", reservable=True)
+    db_session.add(camping)
+    db_session.commit()
+    db_session.refresh(camping)
+
+    payload = _payload(
+        setup_basico,
+        servicio_id=camping.id,
+        tipo_reservacion="camping",
+        fecha_llegada="2026-08-15",
+        fecha_salida="2026-08-17",  # 2 noches
+        num_personas=3,
+    )
+    response = client.post("/reservaciones", json=payload)
+
+    assert response.status_code == 201
+    # (50 entrada + 100 camping) x 3 personas x 2 noches = 900
+    assert response.json()["total"] == "900.00"
+
+
+def test_precio_hospedaje_es_precio_fijo_por_unidad(client, setup_hospedaje):
+    payload = _payload(
+        setup_hospedaje,
+        tipo_reservacion="hospedaje",
+        unidad_hospedaje_id=setup_hospedaje["unidad"].id,
+        fecha_llegada="2026-08-15",
+        fecha_salida="2026-08-18",  # 3 noches
+        num_personas=4,
+    )
+    response = client.post("/reservaciones", json=payload)
+
+    assert response.status_code == 201
+    # (50 entrada x 4 personas x 3 noches) + (800 x 3 noches) = 600 + 2400 = 3000
+    assert response.json()["total"] == "3000.00"
+
+
+def test_hospedaje_rechaza_traslape_de_fechas(client, setup_hospedaje):
+    primera = client.post(
+        "/reservaciones",
+        json=_payload(
+            setup_hospedaje,
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=setup_hospedaje["unidad"].id,
+            fecha_llegada="2026-08-15",
+            fecha_salida="2026-08-18",
+        ),
+    )
+    assert primera.status_code == 201
+
+    # Se traslapa (16-17 cae dentro de 15-18)
+    segunda = client.post(
+        "/reservaciones",
+        json=_payload(
+            setup_hospedaje,
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=setup_hospedaje["unidad"].id,
+            fecha_llegada="2026-08-16",
+            fecha_salida="2026-08-17",
+        ),
+    )
+    assert segunda.status_code == 409
+
+
+def test_hospedaje_misma_unidad_fechas_consecutivas_si_se_permite(client, setup_hospedaje):
+    """Salida exclusiva: alguien puede llegar el mismo día que otro se va."""
+    primera = client.post(
+        "/reservaciones",
+        json=_payload(
+            setup_hospedaje,
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=setup_hospedaje["unidad"].id,
+            fecha_llegada="2026-08-15",
+            fecha_salida="2026-08-18",
+        ),
+    )
+    assert primera.status_code == 201
+
+    consecutiva = client.post(
+        "/reservaciones",
+        json=_payload(
+            setup_hospedaje,
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=setup_hospedaje["unidad"].id,
+            fecha_llegada="2026-08-18",
+            fecha_salida="2026-08-20",
+        ),
+    )
+    assert consecutiva.status_code == 201
+
+
+def test_entrada_exige_llegada_y_salida_mismo_dia(client, setup_basico):
+    response = client.post(
+        "/reservaciones",
+        json=_payload(setup_basico, tipo_reservacion="entrada", fecha_llegada="2026-08-15", fecha_salida="2026-08-16"),
+    )
+    assert response.status_code == 422
+
+
+def test_hospedaje_exige_unidad_hospedaje_id(client, setup_basico):
+    response = client.post(
+        "/reservaciones",
+        json=_payload(
+            setup_basico,
+            tipo_reservacion="hospedaje",
+            fecha_llegada="2026-08-15",
+            fecha_salida="2026-08-16",
+        ),
+    )
+    assert response.status_code == 422
+
+
+def test_entrada_no_admite_unidad_hospedaje_id(client, setup_hospedaje):
+    response = client.post(
+        "/reservaciones",
+        json=_payload(setup_hospedaje, tipo_reservacion="entrada", unidad_hospedaje_id=setup_hospedaje["unidad"].id),
+    )
+    assert response.status_code == 422

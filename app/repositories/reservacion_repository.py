@@ -23,11 +23,30 @@ class ReservacionRepository:
     def obtener_por_id(self, reservacion_id: int) -> Optional[Reservacion]:
         return self.db.query(Reservacion).filter(Reservacion.id == reservacion_id).first()
 
-    def obtener_activa_por_cliente(self, cliente_id: int) -> Optional[Reservacion]:
+    def existe_traslape_unidad_hospedaje(
+        self, unidad_hospedaje_id: int, fecha_llegada: date, fecha_salida: date
+    ) -> bool:
+        """
+        True si la unidad ya tiene una reservación activa (pendiente o
+        confirmada) que se traslapa con el rango [fecha_llegada, fecha_salida).
+        Camping y entrada nunca llaman esto — no tienen unidad ni límite.
+
+        Traslape estándar de rangos de fechas: dos rangos [A,B) y [C,D)
+        se traslapan si A < D y C < B. Se usa "salida exclusiva" (el
+        día de salida de una reservación SÍ puede ser el día de llegada
+        de la siguiente — el cliente se va en la mañana, el nuevo llega
+        en la tarde).
+        """
         return (
             self.db.query(Reservacion)
-            .filter(Reservacion.cliente_id == cliente_id, Reservacion.estado.in_(ESTADOS_ACTIVOS))
+            .filter(
+                Reservacion.unidad_hospedaje_id == unidad_hospedaje_id,
+                Reservacion.estado.in_(ESTADOS_ACTIVOS),
+                Reservacion.fecha_llegada < fecha_salida,
+                Reservacion.fecha_salida > fecha_llegada,
+            )
             .first()
+            is not None
         )
 
     def listar(

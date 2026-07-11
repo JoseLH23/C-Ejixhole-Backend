@@ -1,21 +1,18 @@
 """
-Rutas de Clientes. Sin autenticación por ahora (el módulo Auth/Usuarios
-todavía no existe). Cuando exista, proteger así:
-
-    router = APIRouter(
-        prefix="/clientes",
-        tags=["Clientes"],
-        dependencies=[Depends(get_current_user)],
-    )
+Rutas de Clientes. Protegidas con JWT + rol: admin y operador
+únicamente (ver docs/modulos/permisos-por-rol.md).
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_roles
 from app.schemas.cliente import ClienteCreate, ClienteDuplicadoWarning, ClienteOut, ClienteUpdate
 from app.services.cliente_service import ClienteService
 
-router = APIRouter(prefix="/clientes", tags=["Clientes"])
+router = APIRouter(
+    prefix="/clientes", tags=["Clientes"], dependencies=[Depends(require_roles("admin", "operador"))]
+)
 
 
 @router.post("", response_model=ClienteDuplicadoWarning, status_code=201)

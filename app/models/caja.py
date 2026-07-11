@@ -24,12 +24,18 @@ class CajaSesion(Base):
     __table_args__ = (
         CheckConstraint(f"estado IN {ESTADOS_CAJA}", name="ck_caja_sesiones_estado_valido"),
         # Regla de negocio: un usuario no puede tener dos sesiones de
-        # caja abiertas al mismo tiempo.
+        # caja abiertas al mismo tiempo. sqlite_where se agrega junto a
+        # postgresql_where para que las pruebas con SQLite en memoria
+        # repliquen el mismo comportamiento parcial (mismo ajuste que
+        # se hizo en reservaciones — sin esto, SQLite bloquearía que un
+        # usuario abra una nueva caja después de haber cerrado la
+        # anterior).
         Index(
             "ux_caja_sesion_abierta_por_usuario",
             "usuario_id",
             unique=True,
             postgresql_where=text("estado = 'abierta'"),
+            sqlite_where=text("estado = 'abierta'"),
         ),
     )
 
@@ -48,6 +54,19 @@ class CajaSesion(Base):
     notas = Column(Text, nullable=True)
 
     movimientos = relationship("CajaMovimiento", back_populates="sesion")
+
+    @property
+    def saldo_actual(self):
+        """
+        Calculado en Python, no en la BD (mismo patrón que
+        Reservacion.saldo_pendiente): monto_apertura + ingresos - egresos
+        de todos los movimientos registrados hasta ahora.
+        """
+        from decimal import Decimal
+
+        ingresos = sum((m.monto for m in self.movimientos if m.tipo == "ingreso"), Decimal("0"))
+        egresos = sum((m.monto for m in self.movimientos if m.tipo == "egreso"), Decimal("0"))
+        return self.monto_apertura + ingresos - egresos
 
     def __repr__(self):
         return f"<CajaSesion id={self.id} usuario_id={self.usuario_id} estado={self.estado!r}>"

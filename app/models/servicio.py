@@ -16,6 +16,11 @@ class Servicio(Base):
     capacidad_maxima = Column(Integer, nullable=True)
     categoria = Column(String(80), nullable=True)
     activo = Column(Boolean, nullable=False, default=True)
+    # Distingue lo que SÍ se puede reservar/pagar en el portal (Acceso al
+    # parque, Camping, Cabañas, Habitaciones) de lo que solo se muestra
+    # como catálogo informativo (lancha, tubing, caballo, snorkel, etc. —
+    # se contratan ya estando en el parque, sujeto a disponibilidad).
+    reservable = Column(Boolean, nullable=False, default=False)
     fecha_creacion = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     fecha_actualizacion = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
