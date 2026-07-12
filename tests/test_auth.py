@@ -211,6 +211,50 @@ def test_crear_usuario_email_duplicado(client, admin_creado):
     assert response.status_code == 400
 
 
+# --- GET /auth/me ----------------------------------------------------
+
+
+def test_me_sin_token_rechazado(client):
+    response = client.get("/auth/me")
+    assert response.status_code == 401
+
+
+def test_me_con_token_valido_devuelve_perfil_real(client, admin_creado):
+    login = client.post(
+        "/auth/login", json={"email": "admin@ejixhole.com", "password": "secreta123"}
+    )
+    token = login.json()["access_token"]
+
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["nombre"] == "Admin Test"
+    assert data["email"] == "admin@ejixhole.com"
+    assert data["rol"] == "admin"
+    assert data["activo"] is True
+
+
+def test_me_refleja_el_rol_correcto_de_otro_usuario(client, operador_creado):
+    login = client.post(
+        "/auth/login", json={"email": "operador@ejixhole.com", "password": "clave456"}
+    )
+    token = login.json()["access_token"]
+
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["rol"] == "operador"
+
+
+def test_me_con_usuario_desactivado_rechazado(client, admin_creado, db_session):
+    token = create_access_token(subject=admin_creado["usuario"].email, rol="admin")
+
+    admin_creado["usuario"].activo = False
+    db_session.commit()
+
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
 # --- Protección de rutas de negocio ---------------------------------
 
 

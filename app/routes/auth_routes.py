@@ -3,6 +3,10 @@ Rutas de Auth. Activadas en app/main.py.
 
 POST /auth/login    -> devuelve un JWT (Bearer) válido por
                         JWT_EXPIRE_MINUTES (ver app/core/config.py).
+GET  /auth/me        -> perfil real del usuario autenticado (nombre,
+                        email, rol, activo). Reutiliza get_current_user
+                        (app/dependencies.py), que ya existía pero no
+                        se usaba en ninguna ruta todavía.
 POST /auth/usuarios -> solo un usuario con rol "admin" puede crear
                         usuarios nuevos.
 
@@ -14,7 +18,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_roles
+from app.dependencies import get_current_user, require_roles
+from app.models.usuario import Usuario
 from app.schemas.auth import LoginRequest, Token, UsuarioCreate, UsuarioOut
 from app.services.auth_service import AuthService
 
@@ -26,6 +31,13 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     service = AuthService(db)
     token = service.autenticar(data.email, data.password)
     return Token(access_token=token)
+
+
+@router.get("/me", response_model=UsuarioOut)
+def obtener_perfil_actual(usuario: Usuario = Depends(get_current_user)):
+    """Perfil real del usuario autenticado, a partir del JWT — nada
+    hardcodeado ni derivado del email."""
+    return usuario
 
 
 @router.post("/usuarios", response_model=UsuarioOut, dependencies=[Depends(require_roles("admin"))])
