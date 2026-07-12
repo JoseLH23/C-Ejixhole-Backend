@@ -67,16 +67,20 @@ class ReservacionService:
         fecha_salida: date,
         unidad_hospedaje_id: int | None,
         num_personas: int,
+        excluir_reservacion_id: int | None = None,
     ) -> tuple[Servicio, "UnidadHospedaje | None", int, Decimal, list[dict]]:
         """
         Valida todo lo que no depende del cliente (servicio existe y
         activo, capacidad, unidad de hospedaje disponible) y calcula
         el total real — junto con el DESGLOSE por concepto, para que
         el visitante siempre sepa exactamente qué se le está
-        cobrando, no solo el número final. Compartido por crear() y
-        cotizar() — el precio que se cotiza es EXACTAMENTE el mismo
-        que se cobra al crear, nunca dos fórmulas que puedan
-        desincronizarse.
+        cobrando, no solo el número final. Compartido por crear(),
+        cotizar() y actualizar() — el precio que se cotiza es
+        EXACTAMENTE el mismo que se cobra al crear o editar, nunca
+        fórmulas separadas que puedan desincronizarse.
+
+        `excluir_reservacion_id`: solo lo usa actualizar() — ver nota
+        en ReservacionRepository.existe_traslape_unidad_hospedaje().
         """
         servicio = self.db.query(Servicio).filter(Servicio.id == servicio_id).first()
         if not servicio:
@@ -110,7 +114,9 @@ class ReservacionService:
                     status_code=400,
                     detail=f"{unidad.nombre} admite máximo {unidad.capacidad_maxima} personas.",
                 )
-            if self.repo.existe_traslape_unidad_hospedaje(unidad.id, fecha_llegada, fecha_salida):
+            if self.repo.existe_traslape_unidad_hospedaje(
+                unidad.id, fecha_llegada, fecha_salida, excluir_reservacion_id=excluir_reservacion_id
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"{unidad.nombre} ya está ocupada en alguna de esas fechas.",
@@ -266,3 +272,98 @@ class ReservacionService:
             )
 
         return self.repo.actualizar_estado(reservacion, nuevo_estado)
+
+    def actualizar(
+        self,
+        reservacion_id: int,
+        servicio_id: int | None = None,
+        fecha_llegada: date | None = None,
+        fecha_salida: date | None = None,
+        num_personas: int | None = None,
+        unidad_hospedaje_id: int | None = None,
+        notas: str | None = None,
+    ) -> Reservacion:
+        """
+        Edita fechas, personas, servicio y/o notas de una reservación
+        existente. NO permite cambiar tipo_reservacion (entrada <->
+        camping <-> hospedaje es, en la práctica, una reservación
+        distinta — cambiar eso aquí complicaría la validación de
+        fechas sin un beneficio real; se cancela y se crea una nueva).
+
+        Reutiliza exactamente _validar_y_calcular() — las mismas
+        reglas de capacidad, disponibilidad de unidad y cálculo de
+        precio que crear()/cotizar(), nunca una versión aparte.
+        """
+        reservacion = self.obtener_por_id(reservacion_id)
+
+        if reservacion.estado in ESTADOS_TERMINALES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Esta reservación ya está en estado terminal "
+                    f"'{reservacion.estado}' y no se puede editar."
+                ),
+            )
+
+        # Solo lo que se envía reemplaza el valor actual — el resto se
+        # conserva tal cual (mismo criterio que ClienteUpdate/ServicioUpdate).
+        nuevo_servicio_id = servicio_id if servicio_id is not None else reservacion.servicio_id
+        nueva_fecha_llegada = fecha_llegada if fecha_llegada is not None else reservacion.fecha_llegada
+        nueva_fecha_salida = fecha_salida if fecha_salida is not None else reservacion.fecha_salida
+        nuevo_num_personas = num_personas if num_personas is not None else reservacion.num_personas
+        nueva_unidad_id = (
+            unidad_hospedaje_id if unidad_hospedaje_id is not None else reservacion.unidad_hospedaje_id
+        )
+
+        # Mismas reglas de fechas que ReservacionCreate (schemas/reservacion.py,
+        # validador `fechas_y_unidad_consistentes`) — el tipo_reservacion no
+        # cambia aquí, así que se revalida contra el tipo YA guardado.
+        if nueva_fecha_salida < nueva_fecha_llegada:
+            raise HTTPException(400, "fecha_salida no puede ser anterior a fecha_llegada")
+        if reservacion.tipo_reservacion == "entrada" and nueva_fecha_salida != nueva_fecha_llegada:
+            raise HTTPException(
+                400, "Para 'entrada' (visita de un día), fecha_llegada y fecha_salida deben ser el mismo día"
+            )
+        if reservacion.tipo_reservacion in ("camping", "hospedaje") and nueva_fecha_salida == nueva_fecha_llegada:
+            raise HTTPException(
+                400,
+                f"Para '{reservacion.tipo_reservacion}' se necesita al menos 1 noche "
+                "(fecha_salida posterior a fecha_llegada)",
+            )
+
+        _, unidad, _, nuevo_total, _ = self._validar_y_calcular(
+            nuevo_servicio_id,
+            reservacion.tipo_reservacion,
+            nueva_fecha_llegada,
+            nueva_fecha_salida,
+            nueva_unidad_id,
+            nuevo_num_personas,
+            excluir_reservacion_id=reservacion_id,
+        )
+
+        # Protección real: si ya se le cobró algo, el nuevo total nunca
+        # puede quedar por debajo de lo ya pagado (dejaría un
+        # saldo_pendiente negativo, un estado que no tiene sentido de
+        # negocio — ver Reservacion.saldo_pendiente en el modelo).
+        if nuevo_total < reservacion.monto_pagado:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"El nuevo total (${nuevo_total}) sería menor a lo ya pagado "
+                    f"(${reservacion.monto_pagado}). Registra un reembolso antes de reducir esta reservación."
+                ),
+            )
+
+        cambios = {
+            "servicio_id": nuevo_servicio_id,
+            "fecha_llegada": nueva_fecha_llegada,
+            "fecha_salida": nueva_fecha_salida,
+            "fecha_visita": nueva_fecha_llegada,
+            "num_personas": nuevo_num_personas,
+            "unidad_hospedaje_id": unidad.id if unidad else None,
+            "total": nuevo_total,
+        }
+        if notas is not None:
+            cambios["notas"] = notas
+
+        return self.repo.actualizar(reservacion, cambios)

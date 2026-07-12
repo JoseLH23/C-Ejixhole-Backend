@@ -80,6 +80,28 @@ class ReservacionEstadoUpdate(BaseModel):
         return v
 
 
+class ReservacionUpdate(BaseModel):
+    """
+    Todos los campos opcionales: solo se actualiza lo que se envía
+    (mismo criterio que ClienteUpdate/ServicioUpdate). No incluye
+    `tipo_reservacion` a propósito — ver docstring de
+    ReservacionService.actualizar().
+    """
+    servicio_id: Optional[int] = None
+    fecha_llegada: Optional[date] = None
+    fecha_salida: Optional[date] = None
+    num_personas: Optional[int] = None
+    unidad_hospedaje_id: Optional[int] = None
+    notas: Optional[str] = None
+
+    @field_validator("num_personas")
+    @classmethod
+    def num_personas_positivo(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError("num_personas debe ser mayor a 0")
+        return v
+
+
 class ReservacionOut(BaseModel):
     id: int
     cliente_id: int

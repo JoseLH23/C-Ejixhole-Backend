@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_roles
-from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut
+from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut, ReservacionUpdate
 from app.services.reservacion_service import ReservacionService
 
 router = APIRouter(
@@ -67,6 +67,14 @@ def listar_reservaciones(
 def obtener_reservacion(reservacion_id: int, db: Session = Depends(get_db)):
     service = ReservacionService(db)
     return service.obtener_por_id(reservacion_id)
+
+
+@router.put("/{reservacion_id}", response_model=ReservacionOut)
+def actualizar_reservacion(reservacion_id: int, data: ReservacionUpdate, db: Session = Depends(get_db)):
+    """Edita fechas, personas, servicio y/o notas — no el tipo_reservacion
+    ni el estado (para eso sigue existiendo PATCH /{id}/estado)."""
+    service = ReservacionService(db)
+    return service.actualizar(reservacion_id, **data.model_dump(exclude_unset=True))
 
 
 @router.patch("/{reservacion_id}/estado", response_model=ReservacionOut)

@@ -24,7 +24,11 @@ class ReservacionRepository:
         return self.db.query(Reservacion).filter(Reservacion.id == reservacion_id).first()
 
     def existe_traslape_unidad_hospedaje(
-        self, unidad_hospedaje_id: int, fecha_llegada: date, fecha_salida: date
+        self,
+        unidad_hospedaje_id: int,
+        fecha_llegada: date,
+        fecha_salida: date,
+        excluir_reservacion_id: Optional[int] = None,
     ) -> bool:
         """
         True si la unidad ya tiene una reservación activa (pendiente o
@@ -36,18 +40,22 @@ class ReservacionRepository:
         día de salida de una reservación SÍ puede ser el día de llegada
         de la siguiente — el cliente se va en la mañana, el nuevo llega
         en la tarde).
+
+        `excluir_reservacion_id`: al EDITAR una reservación existente,
+        se debe ignorar su propio registro en este chequeo — si no, una
+        reservación de hospedaje siempre "chocaría consigo misma" y
+        sería imposible editarle las fechas sin cancelarla primero.
+        `crear()`/`cotizar()` nunca lo pasan (no aplica, todavía no existe).
         """
-        return (
-            self.db.query(Reservacion)
-            .filter(
-                Reservacion.unidad_hospedaje_id == unidad_hospedaje_id,
-                Reservacion.estado.in_(ESTADOS_ACTIVOS),
-                Reservacion.fecha_llegada < fecha_salida,
-                Reservacion.fecha_salida > fecha_llegada,
-            )
-            .first()
-            is not None
+        query = self.db.query(Reservacion).filter(
+            Reservacion.unidad_hospedaje_id == unidad_hospedaje_id,
+            Reservacion.estado.in_(ESTADOS_ACTIVOS),
+            Reservacion.fecha_llegada < fecha_salida,
+            Reservacion.fecha_salida > fecha_llegada,
         )
+        if excluir_reservacion_id is not None:
+            query = query.filter(Reservacion.id != excluir_reservacion_id)
+        return query.first() is not None
 
     def listar(
         self,
@@ -76,6 +84,15 @@ class ReservacionRepository:
 
     def actualizar_estado(self, reservacion: Reservacion, nuevo_estado: str) -> Reservacion:
         reservacion.estado = nuevo_estado
+        self.db.commit()
+        self.db.refresh(reservacion)
+        return reservacion
+
+    def actualizar(self, reservacion: Reservacion, cambios: dict) -> Reservacion:
+        """Aplica cambios ya validados por ReservacionService.actualizar() —
+        este método no valida nada, solo persiste."""
+        for campo, valor in cambios.items():
+            setattr(reservacion, campo, valor)
         self.db.commit()
         self.db.refresh(reservacion)
         return reservacion

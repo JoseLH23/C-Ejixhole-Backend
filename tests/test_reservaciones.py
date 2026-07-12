@@ -232,7 +232,96 @@ def test_no_se_puede_reservar_para_cliente_desactivado(client, setup_basico, db_
     assert response.status_code == 400
 
 
-# --- Permisos por rol (mini-entrega) ---------------------------------
+# --- Editar reservación (PUT /reservaciones/{id}) ---------------------
+
+
+def test_editar_num_personas_recalcula_total(client, setup_basico):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+    assert creada["total"] == "200.00"  # $50 x 4 personas
+
+    response = client.put(f"/reservaciones/{creada['id']}", json={"num_personas": 2})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["num_personas"] == 2
+    assert data["total"] == "100.00"  # $50 x 2 personas
+
+
+def test_editar_fechas_reservacion_entrada(client, setup_basico):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+
+    response = client.put(
+        f"/reservaciones/{creada['id']}",
+        json={"fecha_llegada": "2026-09-01", "fecha_salida": "2026-09-01"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["fecha_llegada"] == "2026-09-01"
+
+
+def test_editar_reservacion_entrada_con_fechas_distintas_rechazado(client, setup_basico):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+
+    response = client.put(
+        f"/reservaciones/{creada['id']}",
+        json={"fecha_llegada": "2026-09-01", "fecha_salida": "2026-09-03"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_editar_reservacion_inexistente_404(client, setup_basico):
+    response = client.put("/reservaciones/9999", json={"num_personas": 2})
+    assert response.status_code == 404
+
+
+def test_editar_reservacion_terminal_rechazado_409(client, setup_basico):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+    client.patch(f"/reservaciones/{creada['id']}/estado", json={"nuevo_estado": "cancelada"})
+
+    response = client.put(f"/reservaciones/{creada['id']}", json={"num_personas": 2})
+
+    assert response.status_code == 409
+
+
+def test_editar_reservacion_no_puede_bajar_el_total_bajo_lo_pagado(client, setup_basico, db_session):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+
+    reservacion = db_session.query(Reservacion).filter(Reservacion.id == creada["id"]).first()
+    reservacion.monto_pagado = "150.00"  # de los $200 originales
+    db_session.commit()
+
+    # Bajar a 2 personas dejaría el total en $100 — menos de lo ya pagado.
+    response = client.put(f"/reservaciones/{creada['id']}", json={"num_personas": 2})
+
+    assert response.status_code == 409
+
+
+def test_editar_reservacion_servicio_inexistente_404(client, setup_basico):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+
+    response = client.put(f"/reservaciones/{creada['id']}", json={"servicio_id": 9999})
+
+    assert response.status_code == 404
+
+
+def test_editar_reservacion_excede_capacidad(client, setup_basico):
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+
+    response = client.put(f"/reservaciones/{creada['id']}", json={"num_personas": 99})
+
+    assert response.status_code == 400
+
+
+def test_editar_reservacion_sin_cambios_no_falla(client, setup_basico):
+    """PUT con body vacío no debe romper nada — conserva todos los valores actuales."""
+    creada = client.post("/reservaciones", json=_payload(setup_basico)).json()
+
+    response = client.put(f"/reservaciones/{creada['id']}", json={})
+
+    assert response.status_code == 200
+    assert response.json()["total"] == creada["total"]
+
 
 
 def test_operador_puede_listar_reservaciones(db_session):
