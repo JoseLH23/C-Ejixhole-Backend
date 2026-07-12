@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr, field_validator
 
 
@@ -38,3 +40,14 @@ class UsuarioOut(BaseModel):
         — aquí se extrae `.nombre`. Si ya llega como string (ej. en un
         test que construye el schema directo), se deja igual."""
         return v.nombre if hasattr(v, "nombre") else v
+
+
+class RolOut(BaseModel):
+    """Para GET /usuarios/roles — poblar el selector de rol real al
+    crear un usuario, sin hardcodear la lista en el frontend."""
+    id: int
+    nombre: str
+    descripcion: Optional[str] = None
+
+    class Config:
+        from_attributes = True

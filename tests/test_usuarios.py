@@ -127,3 +127,81 @@ def test_listar_usuarios_respeta_limit(client, admin_creado, operador_creado):
 
     assert response.status_code == 200
     assert len(response.json()) == 1
+
+
+# --- GET /usuarios/roles ------------------------------------------------
+
+
+def test_listar_roles_como_admin(client, admin_creado, operador_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.get("/usuarios/roles", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    nombres = {r["nombre"] for r in response.json()}
+    assert nombres == {"admin", "operador"}
+
+
+def test_listar_roles_como_no_admin_rechazado(client, operador_creado):
+    token = _token_de(client, "operador@ejixhole.com", "clave456")
+    response = client.get("/usuarios/roles", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+
+
+# --- DELETE /usuarios/{id} (desactivar) ----------------------------------
+
+
+def test_desactivar_usuario_como_admin(client, admin_creado, operador_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.delete(
+        f"/usuarios/{operador_creado['usuario'].id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is False
+
+
+def test_no_se_puede_desactivar_al_unico_admin_activo(client, admin_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.delete(
+        f"/usuarios/{admin_creado['usuario'].id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 409
+
+
+def test_se_puede_desactivar_un_admin_si_hay_otro_activo(client, admin_creado, db_session):
+    from app.core.security import hash_password
+
+    otro_admin = Usuario(
+        nombre="Otro Admin",
+        email="otro-admin@ejixhole.com",
+        password_hash=hash_password("clave789"),
+        rol_id=admin_creado["rol"].id,
+    )
+    db_session.add(otro_admin)
+    db_session.commit()
+    db_session.refresh(otro_admin)
+
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.delete(
+        f"/usuarios/{otro_admin.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is False
+
+
+def test_desactivar_usuario_inexistente_404(client, admin_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.delete("/usuarios/9999", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 404
+
+
+def test_desactivar_usuario_ya_desactivado_rechazado(client, admin_creado, operador_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client.delete(f"/usuarios/{operador_creado['usuario'].id}", headers=headers)
+    response = client.delete(f"/usuarios/{operador_creado['usuario'].id}", headers=headers)
+
+    assert response.status_code == 400

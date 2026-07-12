@@ -2,7 +2,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.usuario import Usuario
+from app.models.usuario import Rol, Usuario
 
 
 class UsuarioRepository:
@@ -29,3 +29,20 @@ class UsuarioRepository:
             .limit(limit)
             .all()
         )
+
+    def listar_roles(self) -> list[Rol]:
+        return self.db.query(Rol).order_by(Rol.nombre).all()
+
+    def contar_admins_activos(self) -> int:
+        return (
+            self.db.query(Usuario)
+            .join(Rol, Usuario.rol_id == Rol.id)
+            .filter(Rol.nombre == "admin", Usuario.activo.is_(True))
+            .count()
+        )
+
+    def desactivar(self, usuario: Usuario) -> Usuario:
+        usuario.activo = False
+        self.db.commit()
+        self.db.refresh(usuario)
+        return usuario
