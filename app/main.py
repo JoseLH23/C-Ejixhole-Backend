@@ -20,6 +20,7 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "https://reservas.ejixhole.com",
         "https://ejixhole-reservas.vercel.app",
+        "https://ejixhole-frontend.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
