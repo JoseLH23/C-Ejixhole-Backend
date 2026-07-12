@@ -20,3 +20,12 @@ class UsuarioRepository:
         self.db.commit()
         self.db.refresh(usuario)
         return usuario
+
+    def listar(self, limit: int = 100, offset: int = 0) -> list[Usuario]:
+        return (
+            self.db.query(Usuario)
+            .order_by(Usuario.nombre)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )

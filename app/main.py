@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes
+from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, usuario_routes
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION)
 
@@ -20,7 +20,6 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "https://reservas.ejixhole.com",
         "https://ejixhole-reservas.vercel.app",
-        "https://ejixhole-frontend.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -36,6 +35,7 @@ app.include_router(caja_routes.router)
 app.include_router(reporte_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(publico_routes.router)
+app.include_router(usuario_routes.router)
 
 
 @app.get("/")
