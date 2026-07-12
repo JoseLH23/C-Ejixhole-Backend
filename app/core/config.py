@@ -26,8 +26,12 @@ class Settings:
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+
     # A dónde llegan los avisos de reservación nueva (normalmente tu correo).
     NOTIFICACIONES_EMAIL_DESTINO: str = os.getenv("NOTIFICACIONES_EMAIL_DESTINO", "")
+
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    RESEND_FROM_EMAIL: str = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
 
 settings = Settings()
