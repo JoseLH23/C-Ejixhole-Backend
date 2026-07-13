@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 
 from app.models.pago import METODOS_PAGO, TIPOS_PAGO
 
@@ -50,5 +50,4 @@ class PagoOut(BaseModel):
     notas: Optional[str]
     fecha_pago: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,18 +1,22 @@
 """
 Rutas de Reservaciones. Protegidas con JWT + rol: admin y operador
-únicamente (ver docs/modulos/permisos-por-rol.md). El creador de la
-reservación (usuario_id) se sigue mandando explícito en el body — ver
-nota en app/schemas/reservacion.py sobre por qué no se toma del token
-todavía.
+únicamente.
+
+AL-01 (auditoría de seguridad 13/jul/2026): usuario_id YA NO se toma
+del body — un cliente podía mandar cualquier id y atribuirle la
+reservación a otra persona. Se deriva siempre de request.usuario_actual
+(el usuario real autenticado por el JWT), imposible de falsear desde
+el cliente.
 """
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_roles
+from app.models.usuario import Usuario
 from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut, ReservacionUpdate
 from app.services.reservacion_service import ReservacionService
 
@@ -24,12 +28,16 @@ router = APIRouter(
 
 
 @router.post("", response_model=ReservacionOut, status_code=201)
-def crear_reservacion(data: ReservacionCreate, db: Session = Depends(get_db)):
+def crear_reservacion(
+    data: ReservacionCreate,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
+):
     service = ReservacionService(db)
     return service.crear(
         cliente_id=data.cliente_id,
         servicio_id=data.servicio_id,
-        usuario_id=data.usuario_id,
+        usuario_id=usuario_actual.id,
         tipo_reservacion=data.tipo_reservacion,
         fecha_llegada=data.fecha_llegada,
         fecha_salida=data.fecha_salida,
@@ -47,8 +55,8 @@ def listar_reservaciones(
     estado: Optional[str] = None,
     fecha_desde: Optional[date] = None,
     fecha_hasta: Optional[date] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     service = ReservacionService(db)

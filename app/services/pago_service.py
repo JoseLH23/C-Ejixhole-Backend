@@ -29,7 +29,22 @@ class PagoService:
         referencia: str | None,
         notas: str | None,
     ) -> Pago:
-        reservacion = self.db.query(Reservacion).filter(Reservacion.id == reservacion_id).first()
+        # CR-03 (auditoría de seguridad 13/jul/2026): antes se leía
+        # monto_pagado/saldo_pendiente sin ningún bloqueo — dos cobros
+        # o reembolsos simultáneos sobre la MISMA reservación podían
+        # leer el mismo saldo antes de que ninguno confirmara, y
+        # ambos pasar la validación aunque juntos excedieran el total
+        # real. with_for_update() bloquea esta fila específica hasta
+        # que termine esta transacción (commit/rollback) — una segunda
+        # solicitud concurrente se queda esperando en la base de datos
+        # hasta que la primera termine, y entonces sí ve el saldo ya
+        # actualizado.
+        reservacion = (
+            self.db.query(Reservacion)
+            .filter(Reservacion.id == reservacion_id)
+            .with_for_update()
+            .first()
+        )
         if not reservacion:
             raise HTTPException(status_code=404, detail="Reservación no encontrada.")
 

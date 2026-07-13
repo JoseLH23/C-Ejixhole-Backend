@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 
 
 class Token(BaseModel):
@@ -30,8 +30,7 @@ class UsuarioOut(BaseModel):
     # en vez de crear uno nuevo — también lo devuelve POST /auth/usuarios.
     rol: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @field_validator("rol", mode="before")
     @classmethod
@@ -49,5 +48,4 @@ class RolOut(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

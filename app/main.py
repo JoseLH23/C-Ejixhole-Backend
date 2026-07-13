@@ -20,11 +20,18 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "https://reservas.ejixhole.com",
         "https://ejixhole-reservas.vercel.app",
+        # Agregado por José directamente en producción — se conserva
+        # aquí para no perderlo la próxima vez que se reemplace este
+        # archivo completo.
         "https://ejixhole-frontend.vercel.app",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # ME-03 (auditoría de seguridad 13/jul/2026): antes "*"/"*" — con
+    # allow_credentials=True, un comodín en métodos/headers amplía la
+    # superficie ante cualquier error futuro de origen. Solo lo que
+    # el frontend/portal realmente usan hoy.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(cliente_routes.router)

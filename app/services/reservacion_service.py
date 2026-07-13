@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.cliente import Cliente
@@ -16,6 +17,10 @@ from app.models.unidad_hospedaje import UnidadHospedaje
 from app.repositories.reservacion_repository import ReservacionRepository
 
 ESTADOS_TERMINALES = ("completada", "cancelada")
+
+
+def _es_violacion_de_traslape(error: IntegrityError) -> bool:
+    return "ck_no_traslape_unidad_hospedaje" in str(error.orig)
 
 # Nota (decisión de negocio, ver docs/portal-publico-fase-1.md): el
 # costo es el mismo para adultos y niños — "num_personas" es un
@@ -31,6 +36,27 @@ class ReservacionService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = ReservacionRepository(db)
+
+    def _guardar_o_409(self, operacion):
+        """
+        CR-02 (auditoría de seguridad 13/jul/2026): traduce la
+        violación REAL del constraint EXCLUDE de PostgreSQL
+        (ck_no_traslape_unidad_hospedaje — ver migración
+        0005_no_traslape_unidad_hospedaje) a un 409 claro para el
+        cliente, en vez de un 500 genérico. La protección real contra
+        la doble reservación la da la base de datos, no esto — esto
+        solo traduce el error a algo que la UI puede mostrar bien.
+        """
+        try:
+            return operacion()
+        except IntegrityError as error:
+            self.db.rollback()
+            if _es_violacion_de_traslape(error):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Esa unidad de hospedaje ya tiene una reservación activa que se traslapa con esas fechas.",
+                )
+            raise
 
     def _obtener_precio_entrada(self) -> Decimal:
         """
@@ -240,7 +266,7 @@ class ReservacionService:
             notas=notas,
         )
 
-        return self.repo.crear(reservacion)
+        return self._guardar_o_409(lambda: self.repo.crear(reservacion))
 
     def obtener_por_id(self, reservacion_id: int) -> Reservacion:
         reservacion = self.repo.obtener_por_id(reservacion_id)
@@ -366,4 +392,4 @@ class ReservacionService:
         if notas is not None:
             cambios["notas"] = notas
 
-        return self.repo.actualizar(reservacion, cambios)
+        return self._guardar_o_409(lambda: self.repo.actualizar(reservacion, cambios))

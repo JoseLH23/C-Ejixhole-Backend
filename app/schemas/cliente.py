@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ClienteCreate(BaseModel):
@@ -32,8 +32,7 @@ class ClienteOut(BaseModel):
     fecha_creacion: datetime
     fecha_actualizacion: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ClienteDuplicadoWarning(BaseModel):

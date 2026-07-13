@@ -3,6 +3,11 @@ Rutas públicas — SIN autenticación. Son las únicas de todo el backend
 sin JWT/rol requerido, a propósito: las usa el sitio web público que
 verán los visitantes, no el personal interno.
 
+AL-03 (auditoría de seguridad 13/jul/2026): al ser públicas por
+diseño, no tenían ningún límite contra abuso automatizado — un bot
+podía golpear /publico/reservaciones en bucle. Rate limiting real por
+IP aplicado a nivel router.
+
 Ver docs/portal-publico-fase-2.md para el diseño completo.
 """
 from datetime import date
@@ -11,6 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.core.rate_limiter import limitar_publico
 from app.database import get_db
 from app.schemas.publico import (
     CotizacionOut,
@@ -22,7 +28,7 @@ from app.schemas.publico import (
 )
 from app.services.publico_service import PublicoService
 
-router = APIRouter(prefix="/publico", tags=["Portal público"])
+router = APIRouter(prefix="/publico", tags=["Portal público"], dependencies=[Depends(limitar_publico)])
 
 
 @router.get("/servicios", response_model=list[ServicioPublicoOut])

@@ -5,7 +5,7 @@ explícito en el body — ver nota en reservacion_routes.py.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -37,8 +37,8 @@ def listar_pagos(
     reservacion_id: Optional[int] = None,
     tipo: Optional[str] = None,
     metodo_pago: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     service = PagoService(db)

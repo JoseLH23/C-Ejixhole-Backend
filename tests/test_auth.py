@@ -297,3 +297,23 @@ def test_token_de_usuario_desactivado_es_rechazado(client, admin_creado, db_sess
 
     response = client.get("/clientes", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
+
+
+# --- AL-02: rate limiting real contra fuerza bruta en login -----------
+
+
+def test_login_bloquea_tras_exceder_el_limite_de_intentos(client, admin_creado):
+    for _ in range(5):
+        client.post("/auth/login", json={"email": "admin@ejixhole.com", "password": "incorrecta"})
+
+    respuesta = client.post("/auth/login", json={"email": "admin@ejixhole.com", "password": "incorrecta"})
+    assert respuesta.status_code == 429
+
+
+def test_login_correcto_sigue_funcionando_dentro_del_limite(client, admin_creado):
+    for _ in range(4):
+        client.post("/auth/login", json={"email": "admin@ejixhole.com", "password": "incorrecta"})
+
+    respuesta = client.post("/auth/login", json={"email": "admin@ejixhole.com", "password": "secreta123"})
+    assert respuesta.status_code == 200
+    assert "access_token" in respuesta.json()

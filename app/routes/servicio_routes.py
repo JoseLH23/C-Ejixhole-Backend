@@ -4,7 +4,7 @@ Rutas de Servicios. Protegidas con JWT + rol: admin únicamente
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -32,8 +32,8 @@ def crear_servicio(data: ServicioCreate, db: Session = Depends(get_db)):
 def listar_servicios(
     solo_activos: bool = True,
     categoria: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     service = ServicioService(db)

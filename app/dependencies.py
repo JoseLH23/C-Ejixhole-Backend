@@ -1,7 +1,8 @@
 """
-Dependencias de autenticación. Listas para usar, pero todavía NO
-aplicadas a ninguna ruta existente (Clientes, Reservaciones, Pagos
-siguen sin protección, tal como se acordó). Para proteger una ruta:
+Dependencias de autenticación. Ya aplicadas a Clientes, Reservaciones,
+Pagos, Caja, Servicios, Reportes, Usuarios y Dashboard — solo
+`publico_routes.py` es intencionalmente público (portal de
+reservaciones). Para proteger una ruta nueva:
 
     router = APIRouter(..., dependencies=[Depends(get_current_user)])
 

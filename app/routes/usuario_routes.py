@@ -7,7 +7,7 @@ La creación de usuarios se queda en /auth/usuarios (auth_routes.py) a
 propósito, no se mueve aquí — evita romper al frontend que ya la
 consume ahí y evita duplicar esa lógica en dos lugares.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,7 +23,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=list[UsuarioOut])
-def listar_usuarios(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
+def listar_usuarios(limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     service = UsuarioService(db)
     return service.listar(limit=limit, offset=offset)
 

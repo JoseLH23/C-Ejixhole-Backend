@@ -4,6 +4,31 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _obtener_jwt_secret_obligatorio() -> str:
+    """
+    CR-01 (auditoría de seguridad, 13/jul/2026): antes esto tenía un
+    default público y predecible ("change-this-in-production"). Si la
+    variable de entorno faltaba, la app arrancaba igual con esa clave
+    conocida — cualquiera podía firmar tokens válidos con rol admin.
+
+    Ahora: sin JWT_SECRET_KEY real (32+ caracteres), la app NO arranca
+    — falla rápido y con un mensaje claro, en vez de arrancar
+    silenciosamente insegura.
+    """
+    clave = os.getenv("JWT_SECRET_KEY", "")
+    if not clave or clave == "change-this-in-production":
+        raise RuntimeError(
+            "JWT_SECRET_KEY no está configurada (o sigue en el valor por defecto inseguro). "
+            "Genera una real con: python -c \"import secrets; print(secrets.token_urlsafe(48))\" "
+            "y ponla en tu .env / variables de entorno de Render antes de arrancar."
+        )
+    if len(clave) < 32:
+        raise RuntimeError(
+            f"JWT_SECRET_KEY es demasiado corta ({len(clave)} caracteres) — se requieren al menos 32."
+        )
+    return clave
+
+
 class Settings:
     PROJECT_NAME: str = "EjiXhole Experience OS"
     VERSION: str = "0.1.0"
@@ -13,7 +38,7 @@ class Settings:
         "postgresql+psycopg2://ejixhole_user:changeme@localhost:5432/ejixhole_db",
     )
 
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "change-this-in-production")
+    JWT_SECRET_KEY: str = _obtener_jwt_secret_obligatorio()
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 

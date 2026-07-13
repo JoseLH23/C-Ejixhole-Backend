@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator, ConfigDict
 
 from app.models.reservacion import ESTADOS_RESERVACION, ORIGENES_RESERVACION, TIPOS_RESERVACION
 
@@ -10,10 +10,6 @@ from app.models.reservacion import ESTADOS_RESERVACION, ORIGENES_RESERVACION, TI
 class ReservacionCreate(BaseModel):
     cliente_id: int
     servicio_id: int
-    # Temporal: hasta que exista el módulo Auth/Usuarios, quien crea la
-    # reservación se indica explícitamente. Cuando exista JWT, este
-    # campo se elimina y se toma del usuario autenticado.
-    usuario_id: int
     num_personas: int
     origen: str = "recepcion"
     notas: Optional[str] = None
@@ -123,5 +119,4 @@ class ReservacionOut(BaseModel):
     fecha_creacion: datetime
     fecha_actualizacion: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 
 from app.models.caja import TIPOS_MOVIMIENTO
 
@@ -61,8 +61,7 @@ class CajaMovimientoOut(BaseModel):
     concepto: str
     fecha: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CajaSesionOut(BaseModel):
@@ -78,8 +77,7 @@ class CajaSesionOut(BaseModel):
     saldo_actual: Decimal
     notas: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CajaCorteDiaOut(BaseModel):

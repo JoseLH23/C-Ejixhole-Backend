@@ -17,6 +17,7 @@ docs/modulos/auth.md.
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.rate_limiter import limitar_login
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.usuario import Usuario
@@ -26,7 +27,7 @@ from app.services.auth_service import AuthService
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, dependencies=[Depends(limitar_login)])
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     service = AuthService(db)
     token = service.autenticar(data.email, data.password)

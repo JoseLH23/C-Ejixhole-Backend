@@ -2,7 +2,7 @@
 Rutas de Clientes. Protegidas con JWT + rol: admin y operador
 únicamente (ver docs/modulos/permisos-por-rol.md).
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -27,8 +27,8 @@ def crear_cliente(data: ClienteCreate, db: Session = Depends(get_db)):
 @router.get("", response_model=list[ClienteOut])
 def listar_clientes(
     solo_activos: bool = True,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     service = ClienteService(db)

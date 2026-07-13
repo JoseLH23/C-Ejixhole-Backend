@@ -8,6 +8,7 @@ Correr con:
     pytest tests/test_reservaciones.py -v
 """
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -498,3 +499,54 @@ def test_entrada_no_admite_unidad_hospedaje_id(client, setup_hospedaje):
         json=_payload(setup_hospedaje, tipo_reservacion="entrada", unidad_hospedaje_id=setup_hospedaje["unidad"].id),
     )
     assert response.status_code == 422
+
+
+# --- CR-02: traducción real del constraint EXCLUDE a 409 --------------
+# SQLite (usado en estos tests) no soporta EXCLUDE USING gist — es
+# exclusivo de PostgreSQL, así que la migración real
+# (0005_no_traslape_unidad_hospedaje) no se puede ejercitar aquí de
+# punta a punta. Lo que sí se prueba: que si la base de datos llega a
+# rechazar por ese constraint específico, el service lo traduce a un
+# 409 claro y hace rollback — no un 500 genérico.
+
+
+def test_guardar_o_409_traduce_violacion_real_del_constraint(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.reservacion_service import ReservacionService
+
+    service = ReservacionService(db_session)
+
+    class _ErrorOriginalFalso:
+        def __str__(self):
+            return 'llave duplicada viola restricción de unicidad «ck_no_traslape_unidad_hospedaje»'
+
+    def _operacion_que_falla():
+        raise IntegrityError("statement", "params", _ErrorOriginalFalso())
+
+    with pytest.raises(HTTPException) as exc_info:
+        service._guardar_o_409(_operacion_que_falla)
+
+    assert exc_info.value.status_code == 409
+    assert "traslapa" in exc_info.value.detail
+
+
+def test_guardar_o_409_no_traduce_otros_integrity_error(db_session):
+    """Un IntegrityError que NO es del constraint de traslape debe
+    seguir propagándose tal cual — no ocultar otros errores reales
+    detrás de un 409 que no les corresponde."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.reservacion_service import ReservacionService
+
+    service = ReservacionService(db_session)
+
+    class _OtroErrorFalso:
+        def __str__(self):
+            return "violates foreign key constraint ck_otra_cosa"
+
+    def _operacion_que_falla():
+        raise IntegrityError("statement", "params", _OtroErrorFalso())
+
+    with pytest.raises(IntegrityError):
+        service._guardar_o_409(_operacion_que_falla)

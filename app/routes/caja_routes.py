@@ -7,7 +7,7 @@ módulos).
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -39,8 +39,8 @@ def abrir_caja(data: CajaAbrirRequest, db: Session = Depends(get_db)):
 def listar_sesiones(
     usuario_id: Optional[int] = None,
     estado: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     service = CajaService(db)

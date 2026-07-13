@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator, ConfigDict
 
 from app.models.reservacion import TIPOS_RESERVACION
 
@@ -14,8 +14,7 @@ class ServicioPublicoOut(BaseModel):
     descripcion: Optional[str]
     precio: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UnidadHospedajePublicoOut(BaseModel):
@@ -24,8 +23,7 @@ class UnidadHospedajePublicoOut(BaseModel):
     capacidad_maxima: int
     precio_por_noche: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DisponibilidadOut(BaseModel):
@@ -132,5 +130,4 @@ class ReservacionPublicaOut(BaseModel):
     fecha_creacion: datetime
     mensaje: str = "Tu solicitud fue recibida. Te confirmaremos pronto por correo o teléfono."
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
