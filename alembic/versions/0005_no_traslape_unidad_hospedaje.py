@@ -13,12 +13,12 @@ ninguna unidad de hospedaje puede tener dos reservaciones activas
 garantiza el motor de base de datos, no la aplicacion — es imposible
 de burlar con una condicion de carrera.
 
-revision = "0005_no_traslape_unidad_hospedaje"
+revision = "0005_no_traslape_hospedaje"
 down_revision = "0004_usuario_id_opcional"
 """
 from alembic import op
 
-revision = "0005_no_traslape_unidad_hospedaje"
+revision = "0005_no_traslape_hospedaje"
 down_revision = "0004_usuario_id_opcional"
 branch_labels = None
 depends_on = None

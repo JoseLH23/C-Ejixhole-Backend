@@ -504,7 +504,7 @@ def test_entrada_no_admite_unidad_hospedaje_id(client, setup_hospedaje):
 # --- CR-02: traducción real del constraint EXCLUDE a 409 --------------
 # SQLite (usado en estos tests) no soporta EXCLUDE USING gist — es
 # exclusivo de PostgreSQL, así que la migración real
-# (0005_no_traslape_unidad_hospedaje) no se puede ejercitar aquí de
+# (0005_no_traslape_hospedaje) no se puede ejercitar aquí de
 # punta a punta. Lo que sí se prueba: que si la base de datos llega a
 # rechazar por ese constraint específico, el service lo traduce a un
 # 409 claro y hace rollback — no un 500 genérico.

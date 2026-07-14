@@ -42,7 +42,7 @@ class ReservacionService:
         CR-02 (auditoría de seguridad 13/jul/2026): traduce la
         violación REAL del constraint EXCLUDE de PostgreSQL
         (ck_no_traslape_unidad_hospedaje — ver migración
-        0005_no_traslape_unidad_hospedaje) a un 409 claro para el
+        0005_no_traslape_hospedaje) a un 409 claro para el
         cliente, en vez de un 500 genérico. La protección real contra
         la doble reservación la da la base de datos, no esto — esto
         solo traduce el error a algo que la UI puede mostrar bien.
