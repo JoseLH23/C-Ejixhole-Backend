@@ -38,3 +38,27 @@ class UsuarioService:
             )
 
         return self.repo.desactivar(usuario)
+
+    def actualizar_rol(self, usuario_id: int, rol_id: int) -> Usuario:
+        usuario = self.repo.obtener_por_id(usuario_id)
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+        nuevo_rol = self.repo.obtener_rol_por_id(rol_id)
+        if not nuevo_rol:
+            raise HTTPException(status_code=404, detail="Rol no encontrado.")
+
+        # Misma regla que desactivar: nunca te puedes quedar sin ningún
+        # admin activo, tampoco degradando al único admin a otro rol.
+        if (
+            usuario.rol_id != rol_id
+            and usuario.rol.nombre == "admin"
+            and usuario.activo
+            and self.repo.contar_admins_activos() <= 1
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No se puede cambiar el rol: es el único administrador activo del sistema.",
+            )
+
+        return self.repo.actualizar_rol(usuario, rol_id)

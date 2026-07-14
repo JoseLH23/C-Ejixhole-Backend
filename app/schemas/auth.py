@@ -20,6 +20,10 @@ class UsuarioCreate(BaseModel):
     rol_id: int
 
 
+class UsuarioRolUpdate(BaseModel):
+    rol_id: int
+
+
 class UsuarioOut(BaseModel):
     id: int
     nombre: str

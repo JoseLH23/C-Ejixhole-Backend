@@ -15,6 +15,9 @@ class UsuarioRepository:
     def obtener_por_id(self, usuario_id: int) -> Optional[Usuario]:
         return self.db.query(Usuario).filter(Usuario.id == usuario_id).first()
 
+    def obtener_rol_por_id(self, rol_id: int) -> Optional[Rol]:
+        return self.db.query(Rol).filter(Rol.id == rol_id).first()
+
     def crear(self, usuario: Usuario) -> Usuario:
         self.db.add(usuario)
         self.db.commit()
@@ -43,6 +46,12 @@ class UsuarioRepository:
 
     def desactivar(self, usuario: Usuario) -> Usuario:
         usuario.activo = False
+        self.db.commit()
+        self.db.refresh(usuario)
+        return usuario
+
+    def actualizar_rol(self, usuario: Usuario, rol_id: int) -> Usuario:
+        usuario.rol_id = rol_id
         self.db.commit()
         self.db.refresh(usuario)
         return usuario

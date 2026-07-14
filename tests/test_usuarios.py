@@ -205,3 +205,80 @@ def test_desactivar_usuario_ya_desactivado_rechazado(client, admin_creado, opera
     response = client.delete(f"/usuarios/{operador_creado['usuario'].id}", headers=headers)
 
     assert response.status_code == 400
+
+
+# --- PATCH /usuarios/{id}/rol (editar rol) ------------------------------
+
+
+def test_actualizar_rol_como_admin(client, admin_creado, operador_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.patch(
+        f"/usuarios/{operador_creado['usuario'].id}/rol",
+        json={"rol_id": admin_creado["rol"].id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rol"] == "admin"
+
+
+def test_actualizar_rol_como_no_admin_rechazado(client, operador_creado):
+    token = _token_de(client, "operador@ejixhole.com", "clave456")
+    response = client.patch(
+        f"/usuarios/{operador_creado['usuario'].id}/rol",
+        json={"rol_id": operador_creado["rol"].id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_actualizar_rol_usuario_inexistente_404(client, admin_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.patch(
+        "/usuarios/9999/rol",
+        json={"rol_id": admin_creado["rol"].id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+def test_actualizar_rol_con_rol_inexistente_404(client, admin_creado, operador_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.patch(
+        f"/usuarios/{operador_creado['usuario'].id}/rol",
+        json={"rol_id": 9999},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+def test_no_se_puede_degradar_al_unico_admin_activo(client, admin_creado, operador_creado):
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.patch(
+        f"/usuarios/{admin_creado['usuario'].id}/rol",
+        json={"rol_id": operador_creado["rol"].id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+
+
+def test_se_puede_degradar_un_admin_si_hay_otro_activo(client, admin_creado, operador_creado, db_session):
+    otro_admin = Usuario(
+        nombre="Otro Admin",
+        email="otro-admin@ejixhole.com",
+        password_hash=hash_password("clave789"),
+        rol_id=admin_creado["rol"].id,
+    )
+    db_session.add(otro_admin)
+    db_session.commit()
+    db_session.refresh(otro_admin)
+
+    token = _token_de(client, "admin@ejixhole.com", "secreta123")
+    response = client.patch(
+        f"/usuarios/{otro_admin.id}/rol",
+        json={"rol_id": operador_creado["rol"].id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rol"] == "operador"
