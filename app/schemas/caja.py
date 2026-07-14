@@ -8,9 +8,6 @@ from app.models.caja import TIPOS_MOVIMIENTO
 
 
 class CajaAbrirRequest(BaseModel):
-    usuario_id: int
-    # Temporal: igual que en Reservaciones/Pagos, hasta que exista un
-    # flujo que tome el usuario del token en vez de pedirlo explícito.
     monto_apertura: Decimal = Decimal("0")
 
     @field_validator("monto_apertura")
@@ -33,7 +30,6 @@ class CajaCerrarRequest(BaseModel):
 
 
 class CajaMovimientoCreate(BaseModel):
-    usuario_id: int
     tipo: str
     monto: Decimal
     concepto: str

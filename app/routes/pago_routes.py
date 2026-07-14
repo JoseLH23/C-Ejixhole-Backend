@@ -1,15 +1,21 @@
 """
-Rutas de Pagos. Protegidas con JWT + rol: admin y cajero únicamente
-(ver docs/modulos/permisos-por-rol.md). usuario_id se sigue mandando
-explícito en el body — ver nota en reservacion_routes.py.
+Rutas de Pagos. Protegidas con JWT + rol: admin y cajero únicamente.
+
+AL-01 (auditoría de seguridad 13/jul/2026): usuario_id YA NO se toma
+del body — el mismo fix que ya se hizo en reservaciones, se había
+quedado pendiente aquí. Se deriva del JWT real, no lo manda el cliente.
+
+AL-04: protegido con Idempotency-Key real contra doble clic/reintento.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.idempotency import ejecutar_con_idempotencia
 from app.database import get_db
 from app.dependencies import require_roles
+from app.models.usuario import Usuario
 from app.schemas.pago import PagoCreate, PagoOut
 from app.services.pago_service import PagoService
 
@@ -19,16 +25,28 @@ router = APIRouter(
 
 
 @router.post("", response_model=PagoOut, status_code=201)
-def registrar_pago(data: PagoCreate, db: Session = Depends(get_db)):
+def registrar_pago(
+    data: PagoCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(require_roles("admin", "cajero")),
+):
     service = PagoService(db)
-    return service.registrar_pago(
-        reservacion_id=data.reservacion_id,
-        usuario_id=data.usuario_id,
-        monto=data.monto,
-        tipo=data.tipo,
-        metodo_pago=data.metodo_pago,
-        referencia=data.referencia,
-        notas=data.notas,
+    return ejecutar_con_idempotencia(
+        db,
+        request,
+        endpoint="registrar_pago",
+        cuerpo=data,
+        operacion=lambda: service.registrar_pago(
+            reservacion_id=data.reservacion_id,
+            usuario_id=usuario_actual.id,
+            monto=data.monto,
+            tipo=data.tipo,
+            metodo_pago=data.metodo_pago,
+            referencia=data.referencia,
+            notas=data.notas,
+        ),
+        schema_salida=PagoOut,
     )
 
 

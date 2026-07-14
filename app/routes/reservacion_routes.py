@@ -11,9 +11,10 @@ el cliente.
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.idempotency import ejecutar_con_idempotencia
 from app.database import get_db
 from app.dependencies import require_roles
 from app.models.usuario import Usuario
@@ -30,21 +31,29 @@ router = APIRouter(
 @router.post("", response_model=ReservacionOut, status_code=201)
 def crear_reservacion(
     data: ReservacionCreate,
+    request: Request,
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
 ):
     service = ReservacionService(db)
-    return service.crear(
-        cliente_id=data.cliente_id,
-        servicio_id=data.servicio_id,
-        usuario_id=usuario_actual.id,
-        tipo_reservacion=data.tipo_reservacion,
-        fecha_llegada=data.fecha_llegada,
-        fecha_salida=data.fecha_salida,
-        unidad_hospedaje_id=data.unidad_hospedaje_id,
-        num_personas=data.num_personas,
-        origen=data.origen,
-        notas=data.notas,
+    return ejecutar_con_idempotencia(
+        db,
+        request,
+        endpoint="crear_reservacion",
+        cuerpo=data,
+        operacion=lambda: service.crear(
+            cliente_id=data.cliente_id,
+            servicio_id=data.servicio_id,
+            usuario_id=usuario_actual.id,
+            tipo_reservacion=data.tipo_reservacion,
+            fecha_llegada=data.fecha_llegada,
+            fecha_salida=data.fecha_salida,
+            unidad_hospedaje_id=data.unidad_hospedaje_id,
+            num_personas=data.num_personas,
+            origen=data.origen,
+            notas=data.notas,
+        ),
+        schema_salida=ReservacionOut,
     )
 
 

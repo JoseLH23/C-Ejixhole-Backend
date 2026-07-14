@@ -9,8 +9,6 @@ from app.models.pago import METODOS_PAGO, TIPOS_PAGO
 
 class PagoCreate(BaseModel):
     reservacion_id: int
-    # Temporal: igual que en Reservaciones, hasta que exista Auth/Usuarios.
-    usuario_id: int
     monto: Decimal
     tipo: str
     metodo_pago: str

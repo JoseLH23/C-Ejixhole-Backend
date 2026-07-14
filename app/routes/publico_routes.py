@@ -13,9 +13,10 @@ Ver docs/portal-publico-fase-2.md para el diseño completo.
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.idempotency import ejecutar_con_idempotencia
 from app.core.rate_limiter import limitar_publico
 from app.database import get_db
 from app.schemas.publico import (
@@ -79,22 +80,32 @@ def cotizar_reservacion(
 
 
 @router.post("/reservaciones", response_model=ReservacionPublicaOut, status_code=201)
-def crear_solicitud_reservacion(data: ReservacionPublicaCreate, db: Session = Depends(get_db)):
+def crear_solicitud_reservacion(data: ReservacionPublicaCreate, request: Request, db: Session = Depends(get_db)):
     """
     Crea la reservación en estado "pendiente" (sin pago todavía — se
     agrega en una fase posterior) y notifica al administrador por
     correo (si está configurado) — siempre queda visible de inmediato
     en el sistema interno, sin importar si el correo se envía o no.
+
+    AL-04: protegido con Idempotency-Key real — un doble clic/reintento
+    de red con la misma clave nunca crea una segunda solicitud.
     """
     servicio = PublicoService(db)
-    return servicio.crear_solicitud_reservacion(
-        nombre_completo=data.nombre_completo,
-        email=data.email,
-        telefono=data.telefono,
-        tipo_reservacion=data.tipo_reservacion,
-        fecha_llegada=data.fecha_llegada,
-        fecha_salida=data.fecha_salida,
-        num_personas=data.num_personas,
-        unidad_hospedaje_id=data.unidad_hospedaje_id,
-        notas=data.notas,
+    return ejecutar_con_idempotencia(
+        db,
+        request,
+        endpoint="publico_crear_reservacion",
+        cuerpo=data,
+        operacion=lambda: servicio.crear_solicitud_reservacion(
+            nombre_completo=data.nombre_completo,
+            email=data.email,
+            telefono=data.telefono,
+            tipo_reservacion=data.tipo_reservacion,
+            fecha_llegada=data.fecha_llegada,
+            fecha_salida=data.fecha_salida,
+            num_personas=data.num_personas,
+            unidad_hospedaje_id=data.unidad_hospedaje_id,
+            notas=data.notas,
+        ),
+        schema_salida=ReservacionPublicaOut,
     )

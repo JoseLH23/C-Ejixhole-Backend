@@ -11,3 +11,4 @@ from app.models.unidad_hospedaje import UnidadHospedaje  # noqa: F401
 from app.models.pago import Pago  # noqa: F401
 from app.models.caja import CajaSesion, CajaMovimiento  # noqa: F401
 from app.models.configuracion import Configuracion, Respaldo  # noqa: F401
+from app.models.idempotency_key import IdempotencyKey  # noqa: F401

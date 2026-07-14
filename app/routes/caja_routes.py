@@ -1,17 +1,23 @@
 """
-Rutas de Caja. Protegidas con JWT + rol: admin, operador y cajero
-(ver docs/modulos/permisos-por-rol.md). usuario_id se manda explícito
-en el body por ahora (mismo patrón temporal documentado en los otros
-módulos).
+Rutas de Caja. Protegidas con JWT + rol: admin, operador y cajero.
+
+AL-01 (auditoría de seguridad 13/jul/2026): usuario_id ya no se toma
+del body en abrir/movimientos — se deriva del JWT real (mismo fix que
+en reservaciones/pagos, se había quedado pendiente aquí también).
+
+AL-04: abrir caja y registrar movimiento quedan protegidos con
+Idempotency-Key real contra doble clic.
 """
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.idempotency import ejecutar_con_idempotencia
 from app.database import get_db
 from app.dependencies import require_roles
+from app.models.usuario import Usuario
 from app.schemas.caja import (
     CajaAbrirRequest,
     CajaCerrarRequest,
@@ -30,9 +36,21 @@ router = APIRouter(
 
 
 @router.post("/abrir", response_model=CajaSesionOut, status_code=201)
-def abrir_caja(data: CajaAbrirRequest, db: Session = Depends(get_db)):
+def abrir_caja(
+    data: CajaAbrirRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(require_roles("admin", "operador", "cajero")),
+):
     service = CajaService(db)
-    return service.abrir_sesion(usuario_id=data.usuario_id, monto_apertura=data.monto_apertura)
+    return ejecutar_con_idempotencia(
+        db,
+        request,
+        endpoint="abrir_caja",
+        cuerpo=data,
+        operacion=lambda: service.abrir_sesion(usuario_id=usuario_actual.id, monto_apertura=data.monto_apertura),
+        schema_salida=CajaSesionOut,
+    )
 
 
 @router.get("", response_model=list[CajaSesionOut])
@@ -65,14 +83,27 @@ def obtener_sesion(sesion_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{sesion_id}/movimientos", response_model=CajaMovimientoOut, status_code=201)
-def registrar_movimiento(sesion_id: int, data: CajaMovimientoCreate, db: Session = Depends(get_db)):
+def registrar_movimiento(
+    sesion_id: int,
+    data: CajaMovimientoCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(require_roles("admin", "operador", "cajero")),
+):
     service = CajaService(db)
-    return service.registrar_movimiento(
-        sesion_id=sesion_id,
-        usuario_id=data.usuario_id,
-        tipo=data.tipo,
-        monto=data.monto,
-        concepto=data.concepto,
+    return ejecutar_con_idempotencia(
+        db,
+        request,
+        endpoint="registrar_movimiento_caja",
+        cuerpo=data,
+        operacion=lambda: service.registrar_movimiento(
+            sesion_id=sesion_id,
+            usuario_id=usuario_actual.id,
+            tipo=data.tipo,
+            monto=data.monto,
+            concepto=data.concepto,
+        ),
+        schema_salida=CajaMovimientoOut,
     )
 
 
