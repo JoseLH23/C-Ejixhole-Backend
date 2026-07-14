@@ -56,7 +56,7 @@ def catalogo(db_session):
     camping = Servicio(nombre="Camping", precio="100.00", categoria="camping", reservable=True)
     cabanas = Servicio(nombre="Cabañas", precio="800.00", categoria="hospedaje", reservable=True)
     informativo = Servicio(nombre="Snorkel", precio="0.00", categoria="informativo", reservable=False)
-    unidad = UnidadHospedaje(nombre="Cabaña 1", capacidad_maxima=4, precio_por_noche="800.00")
+    unidad = UnidadHospedaje(nombre="Cabaña 1", tipo_unidad="cabana", capacidad_maxima=4, precio_por_noche="800.00")
 
     db_session.add_all([entrada, camping, cabanas, informativo, unidad])
     db_session.commit()
@@ -284,3 +284,69 @@ def test_cotizar_unidad_ocupada_da_409(client, catalogo):
         },
     )
     assert response.status_code == 409
+
+
+# --- ME-11: la categoría ya no depende del nombre visible ------------------
+
+
+def test_renombrar_la_unidad_no_cambia_la_categoria_resuelta(client, db_session, catalogo):
+    """Antes de este fix, esto habría fallado: la lógica leía
+    nombre.startswith("Cabañ"). Ahora usa tipo_unidad, así que un
+    nombre que NO empieza con "Cabañ" sigue resolviendo bien si su
+    tipo_unidad='cabana' real."""
+    unidad = catalogo["unidad"]
+    unidad.nombre = "Suite Vista al Río"  # ya no empieza con "Cabañ"
+    db_session.commit()
+
+    response = client.post(
+        "/publico/reservaciones",
+        json=_payload(
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=unidad.id,
+            fecha_llegada="2026-08-20",
+            fecha_salida="2026-08-22",
+        ),
+    )
+
+    assert response.status_code == 201  # sigue resolviendo la categoría "Cabañas" bien
+
+
+# --- AL-05: no reutilizar cliente por coincidencia parcial ----------------
+
+
+def test_telefono_compartido_con_correo_distinto_no_reutiliza_cliente(client, db_session, catalogo):
+    """Dos personas con el mismo teléfono (familia, oficina) no deben
+    terminar compartiendo el mismo registro de cliente solo porque
+    coincide un dato."""
+    from app.models.reservacion import Reservacion
+
+    r1 = client.post(
+        "/publico/reservaciones",
+        json=_payload(email="persona.a@example.com", telefono="4441112222"),
+    )
+    r2 = client.post(
+        "/publico/reservaciones",
+        json=_payload(email="persona.b@example.com", telefono="4441112222"),  # mismo teléfono
+    )
+
+    assert r1.status_code == 201 and r2.status_code == 201
+    reservacion_1 = db_session.query(Reservacion).filter(Reservacion.id == r1.json()["id"]).first()
+    reservacion_2 = db_session.query(Reservacion).filter(Reservacion.id == r2.json()["id"]).first()
+    assert reservacion_1.cliente_id != reservacion_2.cliente_id
+
+
+def test_mismo_telefono_y_correo_si_reutiliza_al_cliente_recurrente(client, db_session, catalogo):
+    from app.models.reservacion import Reservacion
+
+    r1 = client.post(
+        "/publico/reservaciones",
+        json=_payload(email="recurrente@example.com", telefono="4443334444", fecha_llegada="2026-09-01", fecha_salida="2026-09-01"),
+    )
+    r2 = client.post(
+        "/publico/reservaciones",
+        json=_payload(email="recurrente@example.com", telefono="4443334444", fecha_llegada="2026-09-05", fecha_salida="2026-09-05"),
+    )
+
+    reservacion_1 = db_session.query(Reservacion).filter(Reservacion.id == r1.json()["id"]).first()
+    reservacion_2 = db_session.query(Reservacion).filter(Reservacion.id == r2.json()["id"]).first()
+    assert reservacion_1.cliente_id == reservacion_2.cliente_id

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, field_validator, model_validator, ConfigDict, Field
 
 from app.models.reservacion import ESTADOS_RESERVACION, ORIGENES_RESERVACION, TIPOS_RESERVACION
 
@@ -12,7 +12,7 @@ class ReservacionCreate(BaseModel):
     servicio_id: int
     num_personas: int
     origen: str = "recepcion"
-    notas: Optional[str] = None
+    notas: Optional[str] = Field(default=None, max_length=1000)
 
     # Nuevo (Fase portal público): tipo de reservación y sus fechas.
     # Para "entrada" (visita de un día), llegada y salida deben ser el
@@ -88,7 +88,7 @@ class ReservacionUpdate(BaseModel):
     fecha_salida: Optional[date] = None
     num_personas: Optional[int] = None
     unidad_hospedaje_id: Optional[int] = None
-    notas: Optional[str] = None
+    notas: Optional[str] = Field(default=None, max_length=1000)
 
     @field_validator("num_personas")
     @classmethod

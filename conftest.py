@@ -15,6 +15,7 @@ import pytest
 os.environ.setdefault(
     "JWT_SECRET_KEY", "clave-de-pruebas-nunca-usar-en-produccion-" + "x" * 20
 )
+os.environ.setdefault("ENVIRONMENT", "development")
 
 
 @pytest.fixture(autouse=True)

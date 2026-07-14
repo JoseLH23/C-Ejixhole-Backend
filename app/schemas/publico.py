@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator, ConfigDict
 
 from app.models.reservacion import TIPOS_RESERVACION
 
@@ -53,17 +53,21 @@ class CotizacionOut(BaseModel):
 class ReservacionPublicaCreate(BaseModel):
     # Datos de contacto — obligatorios los 3, por decisión explícita
     # (para poder resolver cualquier choque de fechas manualmente).
-    nombre_completo: str
+    # AL-10 (auditoría de seguridad 13/jul/2026): antes solo se
+    # validaba "no vacío" — un payload con un nombre o unas notas de
+    # miles de caracteres se guardaba tal cual (base de datos, correo
+    # de notificación, panel interno). Límites reales por campo.
+    nombre_completo: str = Field(..., min_length=2, max_length=150)
     email: EmailStr
-    telefono: str
+    telefono: str = Field(..., min_length=7, max_length=20)
 
     tipo_reservacion: str
     fecha_llegada: date
     fecha_salida: date
-    num_personas: int
+    num_personas: int = Field(..., gt=0, le=50)
     # Solo obligatorio si tipo_reservacion == "hospedaje".
     unidad_hospedaje_id: Optional[int] = None
-    notas: Optional[str] = None
+    notas: Optional[str] = Field(default=None, max_length=1000)
 
     @field_validator("nombre_completo")
     @classmethod

@@ -11,16 +11,24 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 
+TIPOS_UNIDAD = ("cabana", "habitacion")
+
 
 class UnidadHospedaje(Base):
     __tablename__ = "unidades_hospedaje"
     __table_args__ = (
         CheckConstraint("capacidad_maxima > 0", name="ck_unidades_hospedaje_capacidad_positiva"),
         CheckConstraint("precio_por_noche >= 0", name="ck_unidades_hospedaje_precio_positivo"),
+        CheckConstraint("tipo_unidad IN ('cabana', 'habitacion')", name="ck_unidades_hospedaje_tipo_valido"),
     )
 
     id = Column(Integer, primary_key=True)
     nombre = Column(String(100), nullable=False, unique=True)
+    # ME-11 (auditoría de seguridad 13/jul/2026): campo real y estable
+    # — antes la categoría/tarifa se derivaba de `nombre.startswith("Cabañ")`,
+    # así que renombrar la unidad cambiaba la lógica de negocio en
+    # silencio. Ver migración 0008_tipo_unidad_hospedaje.
+    tipo_unidad = Column(String(20), nullable=False, default="habitacion")
     capacidad_maxima = Column(Integer, nullable=False)
     precio_por_noche = Column(Numeric(10, 2), nullable=False)
     activa = Column(Boolean, nullable=False, default=True)

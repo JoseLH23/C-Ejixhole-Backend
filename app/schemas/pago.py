@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from app.models.pago import METODOS_PAGO, TIPOS_PAGO
 
@@ -12,8 +12,8 @@ class PagoCreate(BaseModel):
     monto: Decimal
     tipo: str
     metodo_pago: str
-    referencia: Optional[str] = None
-    notas: Optional[str] = None
+    referencia: Optional[str] = Field(default=None, max_length=200)
+    notas: Optional[str] = Field(default=None, max_length=1000)
 
     @field_validator("monto")
     @classmethod

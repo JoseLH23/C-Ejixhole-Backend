@@ -1,24 +1,26 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
+# AL-10 (auditoría de seguridad 13/jul/2026): mismo criterio que se
+# aplicó a los schemas públicos — límites reales, no solo "opcional".
 class ClienteCreate(BaseModel):
-    nombre: str
-    apellido: Optional[str] = None
-    telefono: Optional[str] = None
-    email: Optional[str] = None
-    notas: Optional[str] = None
+    nombre: str = Field(..., min_length=1, max_length=150)
+    apellido: Optional[str] = Field(default=None, max_length=150)
+    telefono: Optional[str] = Field(default=None, max_length=20)
+    email: Optional[str] = Field(default=None, max_length=255)
+    notas: Optional[str] = Field(default=None, max_length=1000)
 
 
 class ClienteUpdate(BaseModel):
     """Todos los campos opcionales: solo se actualiza lo que se envía."""
-    nombre: Optional[str] = None
-    apellido: Optional[str] = None
-    telefono: Optional[str] = None
-    email: Optional[str] = None
-    notas: Optional[str] = None
+    nombre: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    apellido: Optional[str] = Field(default=None, max_length=150)
+    telefono: Optional[str] = Field(default=None, max_length=20)
+    email: Optional[str] = Field(default=None, max_length=255)
+    notas: Optional[str] = Field(default=None, max_length=1000)
 
 
 class ClienteOut(BaseModel):

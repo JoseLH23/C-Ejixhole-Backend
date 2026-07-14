@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, field_validator, ConfigDict, Field
 
 from app.models.caja import TIPOS_MOVIMIENTO
 
@@ -32,7 +32,7 @@ class CajaCerrarRequest(BaseModel):
 class CajaMovimientoCreate(BaseModel):
     tipo: str
     monto: Decimal
-    concepto: str
+    concepto: str = Field(..., min_length=1, max_length=200)
 
     @field_validator("tipo")
     @classmethod

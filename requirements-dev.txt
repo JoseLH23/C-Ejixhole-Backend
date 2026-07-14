@@ -1,0 +1,8 @@
+# BA-04 (auditoria de seguridad 13/jul/2026): dependencias SOLO
+# de desarrollo/pruebas -- nunca se instalan en produccion (Render).
+-r requirements.txt
+httpx==0.28.1
+iniconfig==2.3.0
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==8.4.2

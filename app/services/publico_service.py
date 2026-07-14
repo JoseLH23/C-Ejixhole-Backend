@@ -53,9 +53,24 @@ class PublicoService:
         return not traslape
 
     def _buscar_o_crear_cliente(self, nombre_completo: str, email: str, telefono: str) -> Cliente:
+        """
+        AL-05 (auditoría de seguridad 13/jul/2026): antes se reutilizaba
+        el PRIMER resultado que coincidiera por teléfono O correo — un
+        teléfono compartido (familia, oficina) o un correo reciclado
+        podía atribuir la reservación a la persona equivocada.
+
+        Ahora solo se reutiliza un cliente existente si coinciden AMBOS
+        datos. Una coincidencia parcial (solo teléfono o solo correo)
+        NO se reutiliza en silencio — se crea un cliente nuevo para
+        esta reservación, en vez de arriesgar mezclar el historial de
+        dos personas distintas.
+        """
         coincidencias = self.cliente_repo.buscar_por_telefono_o_email(telefono, email)
-        if coincidencias:
-            return coincidencias[0]
+        coincidencia_segura = next(
+            (c for c in coincidencias if c.telefono == telefono and c.email == email), None
+        )
+        if coincidencia_segura is not None:
+            return coincidencia_segura
 
         cliente = Cliente(nombre=nombre_completo, email=email, telefono=telefono)
         return self.cliente_repo.crear(cliente)
@@ -77,7 +92,7 @@ class PublicoService:
             unidad = self.db.query(UnidadHospedaje).filter(UnidadHospedaje.id == unidad_hospedaje_id).first()
             if not unidad:
                 raise HTTPException(status_code=404, detail="Unidad de hospedaje no encontrada.")
-            nombre_categoria_servicio = "Cabañas" if unidad.nombre.startswith("Cabañ") else "Habitaciones"
+            nombre_categoria_servicio = "Cabañas" if unidad.tipo_unidad == "cabana" else "Habitaciones"
             servicio = (
                 self.db.query(Servicio)
                 .filter(Servicio.nombre == nombre_categoria_servicio, Servicio.reservable.is_(True))

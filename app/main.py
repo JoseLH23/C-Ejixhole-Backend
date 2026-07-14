@@ -4,7 +4,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, usuario_routes
 
-app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION)
+# ME-02 (auditoría de seguridad 13/jul/2026): Swagger/OpenAPI
+# facilitan enumerar todos los endpoints reales a cualquiera que los
+# encuentre — se ocultan por defecto en producción (ENVIRONMENT
+# controla esto, ver app/core/config.py).
+_docs_habilitados = settings.ENVIRONMENT != "production"
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    docs_url="/docs" if _docs_habilitados else None,
+    redoc_url="/redoc" if _docs_habilitados else None,
+    openapi_url="/openapi.json" if _docs_habilitados else None,
+)
 
 # CORS para desarrollo: permite que el frontend interno Vite
 # (localhost:5173) y el sitio público (localhost:5174 en desarrollo,

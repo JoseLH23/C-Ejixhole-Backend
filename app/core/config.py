@@ -42,6 +42,12 @@ class Settings:
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 
+    # ME-02 (auditoría de seguridad 13/jul/2026): default seguro
+    # "production" — si no se configura explícitamente, se asume el
+    # entorno más restrictivo (docs ocultos), no el más expuesto.
+    # Para ver /docs en desarrollo local: ENVIRONMENT=development en tu .env
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
+
     # Notificación por correo de reservaciones nuevas del portal
     # público. Todo queda vacío por defecto a propósito: si no se
     # configura, el sistema sigue funcionando (la reservación se crea

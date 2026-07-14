@@ -317,3 +317,29 @@ def test_login_correcto_sigue_funcionando_dentro_del_limite(client, admin_creado
     respuesta = client.post("/auth/login", json={"email": "admin@ejixhole.com", "password": "secreta123"})
     assert respuesta.status_code == 200
     assert "access_token" in respuesta.json()
+
+
+# --- ME-02: docs ocultos en producción por defecto ---------------------
+
+
+def test_docs_ocultos_cuando_environment_es_production(monkeypatch):
+    """Reimporta app.main con ENVIRONMENT=production real para
+    confirmar el comportamiento por defecto — no solo confiar en que
+    el test suite corre con ENVIRONMENT=development."""
+    import importlib
+    import sys
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    for modulo in ["app.main", "app.core.config"]:
+        sys.modules.pop(modulo, None)
+
+    app_main = importlib.import_module("app.main")
+    assert app_main.app.docs_url is None
+    assert app_main.app.redoc_url is None
+    assert app_main.app.openapi_url is None
+
+    # Se recarga para no dejar contaminado app.main para el resto del suite.
+    sys.modules.pop("app.main", None)
+    sys.modules.pop("app.core.config", None)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    importlib.import_module("app.main")
