@@ -1151,3 +1151,48 @@ def test_reporte_csv_no_rompe_el_json_por_default(client, db_session, base):
 def test_reporte_formato_invalido_da_422(client):
     response = client.get("/reportes/ingresos", params={"formato": "xml"})
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("nombre_malicioso", ["=cmd|'/c calc'!A1", "+SUM(1+1)", "-2+3", "@SUM(1,2)"])
+def test_csv_escapa_valores_que_parecen_formula(client, db_session, base, nombre_malicioso):
+    """
+    Hallazgo de seguridad (CSV/Formula Injection, CWE-1236): cliente_nombre
+    viene de nombre_completo, un campo que el visitante del portal público
+    controla libremente (sin login) — un CSV sin escapar permitiría que ese
+    nombre se ejecute como fórmula al abrirse en Excel/Sheets.
+    """
+    cliente = _crear_cliente_extra(db_session, nombre_malicioso)
+    reservacion = Reservacion(
+        cliente_id=cliente.id,
+        servicio_id=base["servicio"].id,
+        usuario_id=base["usuario"].id,
+        fecha_visita=date(2026, 8, 15),
+        num_personas=2,
+        origen="recepcion",
+        total=Decimal("1000.00"),
+        monto_pagado=Decimal("0"),
+        estado="pendiente",
+    )
+    db_session.add(reservacion)
+    db_session.commit()
+    reservacion2 = Reservacion(
+        cliente_id=cliente.id,
+        servicio_id=base["servicio"].id,
+        usuario_id=base["usuario"].id,
+        fecha_visita=date(2026, 8, 16),
+        num_personas=2,
+        origen="recepcion",
+        total=Decimal("1000.00"),
+        monto_pagado=Decimal("0"),
+        estado="pendiente",
+    )
+    db_session.add(reservacion2)
+    db_session.commit()
+
+    response = client.get("/reportes/clientes-frecuentes", params={"formato": "csv"})
+
+    assert response.status_code == 200
+    filas = _filas_csv(response)
+    assert len(filas) == 1
+    assert filas[0]["cliente_nombre"] == "'" + nombre_malicioso
+    assert not filas[0]["cliente_nombre"].startswith(("=", "+", "-", "@"))
