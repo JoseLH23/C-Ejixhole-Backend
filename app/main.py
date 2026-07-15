@@ -43,7 +43,10 @@ app.add_middleware(
     # superficie ante cualquier error futuro de origen. Solo lo que
     # el frontend/portal realmente usan hoy.
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    # Los flujos idempotentes de reservaciones y pagos envían este
+    # header desde ambos frontends. Debe estar permitido explícitamente
+    # para que el preflight CORS del navegador no bloquee la petición.
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
 
 app.include_router(cliente_routes.router)
