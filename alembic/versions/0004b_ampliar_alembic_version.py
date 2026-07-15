@@ -29,4 +29,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(32);")
+    # No se reduce a VARCHAR(32): revisiones posteriores del historial
+    # superan ese tamaño y Alembic necesita escribir sus identificadores
+    # mientras recorre el downgrade. Mantener 64 evita que el mecanismo
+    # de migraciones se rompa a mitad del rollback.
+    pass
