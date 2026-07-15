@@ -21,11 +21,12 @@ BOM_UTF8 = "﻿"  # Excel en Windows (ver CLAUDE.md) lo necesita para no romper 
 # Inyección de fórmulas (CSV/Formula Injection, CWE-1236): un valor que
 # llega hasta el CSV con datos de entrada del cliente (ej.
 # cliente_nombre viene de nombre_completo del portal público, sin
-# login) y empieza con =, +, - o @ se interpreta como fórmula al abrir
-# el archivo en Excel/Sheets — puede ejecutar comandos o filtrar datos
-# a un servidor externo. Se neutraliza anteponiendo un apóstrofe, el
-# mismo mecanismo que usa Excel para forzar texto literal.
-CARACTERES_FORMULA_PELIGROSOS = ("=", "+", "-", "@")
+# login) y empieza con =, +, -, @, tab o retorno de carro se interpreta
+# como fórmula al abrir el archivo en Excel/Sheets — puede ejecutar
+# comandos o filtrar datos a un servidor externo. Se neutraliza
+# anteponiendo un apóstrofe, el mismo mecanismo que usa Excel para
+# forzar texto literal.
+CARACTERES_FORMULA_PELIGROSOS = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _escapar_formula(valor: str) -> str:
