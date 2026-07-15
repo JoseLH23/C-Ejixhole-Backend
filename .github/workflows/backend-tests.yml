@@ -82,5 +82,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Aplicar migraciones
+      - name: Confirmar una sola cabeza Alembic
+        run: |
+          test "$(alembic heads | wc -l)" -eq 1
+
+      - name: Aplicar migraciones desde cero
         run: alembic upgrade head
+
+      - name: Confirmar revision actual
+        run: alembic current
+
+      - name: Probar downgrade completo en base desechable
+        run: alembic downgrade base
+
+      - name: Reaplicar todo el historial
+        run: alembic upgrade head
+
+      - name: Verificar que modelos y migraciones estan sincronizados
+        run: alembic check
