@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, usuario_routes
+from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, evento_calendario_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, usuario_routes
 
 # ME-02 (auditoría de seguridad 13/jul/2026): Swagger/OpenAPI
 # facilitan enumerar todos los endpoints reales a cualquiera que los
@@ -59,6 +59,7 @@ app.include_router(reporte_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(publico_routes.router)
 app.include_router(usuario_routes.router)
+app.include_router(evento_calendario_routes.router)
 
 
 @app.get("/")
