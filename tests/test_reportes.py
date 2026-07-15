@@ -11,6 +11,8 @@ antigüedad — la API no expone esos campos para escritura manual.
 Correr con:
     pytest tests/test_reportes.py -v
 """
+import csv
+import io
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -1074,3 +1076,123 @@ def test_ingresos_agrupado_por_metodo_pago_incluye_reembolsos(client, db_session
     assert serie[0]["ingresos"] == "500.00"
     assert serie[0]["reembolsos"] == "50.00"
     assert serie[0]["neto"] == "450.00"
+
+
+# --- Exportación CSV (?formato=csv) -----------------------------------
+
+
+def _filas_csv(response):
+    """Decodifica el CSV descargado (con BOM UTF-8) a una lista de dicts."""
+    texto = response.content.decode("utf-8-sig")
+    return list(csv.DictReader(io.StringIO(texto)))
+
+
+def test_ingresos_csv_devuelve_archivo_descargable(client, db_session, base):
+    r1 = _crear_reservacion(db_session, base)
+    _crear_pago(
+        db_session, r1, base, Decimal("300.00"),
+        fecha_pago=datetime(2026, 7, 1, 10, 0, tzinfo=timezone.utc),
+    )
+
+    response = client.get(
+        "/reportes/ingresos",
+        params={"desde": "2026-07-01", "hasta": "2026-07-31", "formato": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert 'attachment; filename="reporte_ingresos.csv"' in response.headers["content-disposition"]
+
+    filas = _filas_csv(response)
+    assert len(filas) == 1
+    assert filas[0]["periodo"] == "2026-07-01"
+    assert filas[0]["ingresos"] == "300.00"
+
+
+def test_cuentas_por_cobrar_csv_incluye_columnas_esperadas(client, db_session, base):
+    _crear_reservacion(db_session, base, total=Decimal("1000.00"), monto_pagado=Decimal("400.00"), estado="confirmada")
+
+    response = client.get("/reportes/cuentas-por-cobrar", params={"formato": "csv"})
+
+    assert response.status_code == 200
+    filas = _filas_csv(response)
+    assert len(filas) == 1
+    assert filas[0]["saldo_pendiente"] == "600.00"
+    assert set(filas[0].keys()) == {
+        "reservacion_id", "cliente_id", "servicio_id", "fecha_visita", "estado",
+        "total", "monto_pagado", "saldo_pendiente", "antiguedad_dias",
+    }
+
+
+def test_reservaciones_por_estado_csv_aplana_el_conteo(client, db_session, base):
+    _crear_reservacion(db_session, base, estado="pendiente")
+    _crear_reservacion(db_session, base, estado="confirmada")
+    _crear_reservacion(db_session, base, estado="confirmada")
+
+    response = client.get("/reportes/reservaciones-por-estado", params={"formato": "csv"})
+
+    assert response.status_code == 200
+    filas = {fila["estado"]: fila["cantidad"] for fila in _filas_csv(response)}
+    assert filas["pendiente"] == "1"
+    assert filas["confirmada"] == "2"
+
+
+def test_reporte_csv_no_rompe_el_json_por_default(client, db_session, base):
+    """?formato=csv no debe alterar la respuesta JSON default (sin el parámetro)."""
+    _crear_reservacion(db_session, base, estado="pendiente")
+
+    response = client.get("/reportes/reservaciones-por-estado")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["por_estado"]["pendiente"] == 1
+
+
+def test_reporte_formato_invalido_da_422(client):
+    response = client.get("/reportes/ingresos", params={"formato": "xml"})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("nombre_malicioso", ["=cmd|'/c calc'!A1", "+SUM(1+1)", "-2+3", "@SUM(1,2)"])
+def test_csv_escapa_valores_que_parecen_formula(client, db_session, base, nombre_malicioso):
+    """
+    Hallazgo de seguridad (CSV/Formula Injection, CWE-1236): cliente_nombre
+    viene de nombre_completo, un campo que el visitante del portal público
+    controla libremente (sin login) — un CSV sin escapar permitiría que ese
+    nombre se ejecute como fórmula al abrirse en Excel/Sheets.
+    """
+    cliente = _crear_cliente_extra(db_session, nombre_malicioso)
+    reservacion = Reservacion(
+        cliente_id=cliente.id,
+        servicio_id=base["servicio"].id,
+        usuario_id=base["usuario"].id,
+        fecha_visita=date(2026, 8, 15),
+        num_personas=2,
+        origen="recepcion",
+        total=Decimal("1000.00"),
+        monto_pagado=Decimal("0"),
+        estado="pendiente",
+    )
+    db_session.add(reservacion)
+    db_session.commit()
+    reservacion2 = Reservacion(
+        cliente_id=cliente.id,
+        servicio_id=base["servicio"].id,
+        usuario_id=base["usuario"].id,
+        fecha_visita=date(2026, 8, 16),
+        num_personas=2,
+        origen="recepcion",
+        total=Decimal("1000.00"),
+        monto_pagado=Decimal("0"),
+        estado="pendiente",
+    )
+    db_session.add(reservacion2)
+    db_session.commit()
+
+    response = client.get("/reportes/clientes-frecuentes", params={"formato": "csv"})
+
+    assert response.status_code == 200
+    filas = _filas_csv(response)
+    assert len(filas) == 1
+    assert filas[0]["cliente_nombre"] == "'" + nombre_malicioso
+    assert not filas[0]["cliente_nombre"].startswith(("=", "+", "-", "@"))
