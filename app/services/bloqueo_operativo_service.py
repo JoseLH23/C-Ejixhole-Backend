@@ -12,6 +12,23 @@ class BloqueoOperativoService:
     def __init__(self, db: Session):
         self.db = db
 
+    def listar_bloqueos(self, desde: date, hasta: date) -> list[EventoCalendario]:
+        """Devuelve solo bloqueos que se traslapan con el rango solicitado.
+
+        La ruta pública serializa únicamente las fechas; el título y las notas
+        permanecen internos para no exponer información operativa.
+        """
+        return (
+            self.db.query(EventoCalendario)
+            .filter(
+                EventoCalendario.tipo == "bloqueo",
+                EventoCalendario.fecha_inicio <= hasta,
+                EventoCalendario.fecha_fin >= desde,
+            )
+            .order_by(EventoCalendario.fecha_inicio.asc(), EventoCalendario.id.asc())
+            .all()
+        )
+
     def buscar_traslape(
         self,
         fecha_llegada: date,

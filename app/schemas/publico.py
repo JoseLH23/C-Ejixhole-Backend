@@ -30,6 +30,15 @@ class DisponibilidadOut(BaseModel):
     disponible: bool
 
 
+class FechaBloqueadaPublicaOut(BaseModel):
+    """Rango cerrado visible al visitante, sin título ni notas internas."""
+
+    fecha_inicio: date
+    fecha_fin: date
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ConceptoPrecio(BaseModel):
     """Una línea del desglose — para que el visitante siempre sepa qué se le cobra, no solo el total."""
 
