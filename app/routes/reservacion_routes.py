@@ -19,6 +19,7 @@ from app.database import get_db
 from app.dependencies import require_roles
 from app.models.usuario import Usuario
 from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut, ReservacionUpdate
+from app.services.bloqueo_operativo_service import BloqueoOperativoService
 from app.services.reservacion_service import ReservacionService
 
 router = APIRouter(
@@ -35,6 +36,11 @@ def crear_reservacion(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
 ):
+    BloqueoOperativoService(db).validar_disponibilidad(
+        data.fecha_llegada,
+        data.fecha_salida,
+        data.tipo_reservacion,
+    )
     service = ReservacionService(db)
     return ejecutar_con_idempotencia(
         db,
@@ -91,6 +97,14 @@ def actualizar_reservacion(reservacion_id: int, data: ReservacionUpdate, db: Ses
     """Edita fechas, personas, servicio y/o notas — no el tipo_reservacion
     ni el estado (para eso sigue existiendo PATCH /{id}/estado)."""
     service = ReservacionService(db)
+    actual = service.obtener_por_id(reservacion_id)
+    nueva_llegada = data.fecha_llegada if data.fecha_llegada is not None else actual.fecha_llegada
+    nueva_salida = data.fecha_salida if data.fecha_salida is not None else actual.fecha_salida
+    BloqueoOperativoService(db).validar_disponibilidad(
+        nueva_llegada,
+        nueva_salida,
+        actual.tipo_reservacion,
+    )
     return service.actualizar(reservacion_id, **data.model_dump(exclude_unset=True))
 
 
