@@ -13,7 +13,7 @@ Ver docs/portal-publico-fase-2.md para el diseño completo.
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.idempotency import ejecutar_con_idempotencia
@@ -22,6 +22,7 @@ from app.database import get_db
 from app.schemas.publico import (
     CotizacionOut,
     DisponibilidadOut,
+    FechaBloqueadaPublicaOut,
     ReservacionPublicaCreate,
     ReservacionPublicaOut,
     ServicioPublicoOut,
@@ -43,6 +44,20 @@ def listar_servicios_informativos(db: Session = Depends(get_db)):
 def listar_unidades_hospedaje(db: Session = Depends(get_db)):
     """Habitación 1, Habitación 2, Cabaña 1 — para que el visitante elija."""
     return PublicoService(db).listar_unidades_hospedaje()
+
+
+@router.get("/fechas-bloqueadas", response_model=list[FechaBloqueadaPublicaOut])
+def listar_fechas_bloqueadas(
+    desde: date = Query(...),
+    hasta: date = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Publica únicamente rangos cerrados; títulos y notas siguen privados."""
+    if hasta < desde:
+        raise HTTPException(status_code=400, detail="hasta no puede ser anterior a desde")
+    if (hasta - desde).days > 366:
+        raise HTTPException(status_code=400, detail="El rango máximo permitido es de 366 días")
+    return BloqueoOperativoService(db).listar_bloqueos(desde, hasta)
 
 
 @router.get("/disponibilidad", response_model=DisponibilidadOut)
