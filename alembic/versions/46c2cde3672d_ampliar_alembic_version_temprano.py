@@ -29,4 +29,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(32);")
+    # El ancho de la tabla de control es infraestructura de Alembic, no
+    # una regla de negocio de esta revision. Reducirlo a 32 rompe el
+    # propio rollback cuando Alembic intenta registrar revisiones largas
+    # ya presentes en el historial. Se conserva VARCHAR(64) de forma
+    # intencional y segura en bases nuevas y existentes.
+    pass
