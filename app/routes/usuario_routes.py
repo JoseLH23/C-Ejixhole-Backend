@@ -1,6 +1,6 @@
 """
-Rutas de Usuarios (listar, listar roles, desactivar). Solo admin —
-mismo criterio que POST /auth/usuarios (crear), que también es
+Rutas de Usuarios (listar, listar roles, desactivar, editar rol). Solo
+admin — mismo criterio que POST /auth/usuarios (crear), que también es
 admin-only.
 
 La creación de usuarios se queda en /auth/usuarios (auth_routes.py) a
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_roles
-from app.schemas.auth import RolOut, UsuarioOut
+from app.schemas.auth import RolOut, UsuarioOut, UsuarioRolUpdate
 from app.services.usuario_service import UsuarioService
 
 router = APIRouter(
@@ -42,3 +42,12 @@ def desactivar_usuario(usuario_id: int, db: Session = Depends(get_db)):
     ningún admin activo (ver UsuarioService.desactivar)."""
     service = UsuarioService(db)
     return service.desactivar(usuario_id)
+
+
+@router.patch("/{usuario_id}/rol", response_model=UsuarioOut)
+def actualizar_rol_usuario(usuario_id: int, data: UsuarioRolUpdate, db: Session = Depends(get_db)):
+    """Cambia el rol de un usuario existente. Misma protección que
+    desactivar: nunca deja el sistema sin ningún admin activo (ver
+    UsuarioService.actualizar_rol)."""
+    service = UsuarioService(db)
+    return service.actualizar_rol(usuario_id, data.rol_id)
