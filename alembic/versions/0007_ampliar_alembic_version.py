@@ -19,4 +19,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(32);")
+    # La columna de control debe seguir aceptando todas las revisiones
+    # del historial incluso durante un rollback. Reducirla a 32 haria
+    # fallar Alembic al intentar registrar IDs largos como 0005.
+    pass
