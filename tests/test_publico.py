@@ -54,7 +54,10 @@ def catalogo(db_session):
     """Replica el catálogo real mínimo: los 3 servicios reservables + 1 informativo + 1 unidad."""
     entrada = Servicio(nombre="Acceso al parque", precio="50.00", categoria="entrada", reservable=True)
     camping = Servicio(nombre="Camping", precio="100.00", categoria="camping", reservable=True)
-    cabanas = Servicio(nombre="Cabañas", precio="800.00", categoria="hospedaje", reservable=True)
+    cabanas = Servicio(
+        nombre="Cabañas", precio="800.00", categoria="hospedaje",
+        tipo_unidad_hospedaje="cabana", reservable=True,
+    )
     informativo = Servicio(nombre="Snorkel", precio="0.00", categoria="informativo", reservable=False)
     unidad = UnidadHospedaje(nombre="Cabaña 1", tipo_unidad="cabana", capacidad_maxima=4, precio_por_noche="800.00")
 
@@ -309,6 +312,81 @@ def test_renombrar_la_unidad_no_cambia_la_categoria_resuelta(client, db_session,
     )
 
     assert response.status_code == 201  # sigue resolviendo la categoría "Cabañas" bien
+
+
+def test_renombrar_el_servicio_no_rompe_la_resolucion_de_hospedaje(client, db_session, catalogo):
+    """
+    Reincidencia de ME-11 (hallazgo real 15/jul/2026): _resolver_servicio_id
+    elegía el Servicio "Cabañas"/"Habitaciones" filtrando por
+    Servicio.nombre — el mismo texto libre editable desde el módulo
+    Servicios. Ahora usa tipo_unidad_hospedaje (campo estable), así que
+    renombrar el SERVICIO (no la unidad) ya no rompe la creación de la
+    reservación.
+    """
+    from app.models.servicio import Servicio
+
+    servicio_cabanas = db_session.query(Servicio).filter(Servicio.tipo_unidad_hospedaje == "cabana").one()
+    servicio_cabanas.nombre = "Alojamiento tipo A"  # ya no se llama "Cabañas"
+    db_session.commit()
+
+    response = client.post(
+        "/publico/reservaciones",
+        json=_payload(
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=catalogo["unidad"].id,
+            fecha_llegada="2026-08-20",
+            fecha_salida="2026-08-22",
+        ),
+    )
+
+    assert response.status_code == 201
+
+
+def test_resuelve_habitacion_y_cabana_por_tipo_unidad_no_por_nombre(client, db_session, catalogo):
+    """Con Cabañas y Habitaciones presentes, cada unidad debe resolver
+    su propio servicio según tipo_unidad_hospedaje, sin cruzarse."""
+    from app.models.servicio import Servicio
+    from app.models.unidad_hospedaje import UnidadHospedaje
+
+    habitaciones = Servicio(
+        nombre="Habitaciones", precio="800.00", categoria="hospedaje",
+        tipo_unidad_hospedaje="habitacion", reservable=True,
+    )
+    habitacion_1 = UnidadHospedaje(
+        nombre="Habitación 1", tipo_unidad="habitacion", capacidad_maxima=4, precio_por_noche="800.00"
+    )
+    db_session.add_all([habitaciones, habitacion_1])
+    db_session.commit()
+    db_session.refresh(habitacion_1)
+
+    respuesta_habitacion = client.post(
+        "/publico/reservaciones",
+        json=_payload(
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=habitacion_1.id,
+            fecha_llegada="2026-08-20",
+            fecha_salida="2026-08-22",
+        ),
+    )
+    assert respuesta_habitacion.status_code == 201
+
+    respuesta_cabana = client.post(
+        "/publico/reservaciones",
+        json=_payload(
+            tipo_reservacion="hospedaje",
+            unidad_hospedaje_id=catalogo["unidad"].id,
+            fecha_llegada="2026-08-20",
+            fecha_salida="2026-08-22",
+        ),
+    )
+    assert respuesta_cabana.status_code == 201
+
+    from app.models.reservacion import Reservacion
+
+    r_habitacion = db_session.query(Reservacion).filter(Reservacion.id == respuesta_habitacion.json()["id"]).one()
+    r_cabana = db_session.query(Reservacion).filter(Reservacion.id == respuesta_cabana.json()["id"]).one()
+    assert r_habitacion.servicio_id == habitaciones.id
+    assert r_cabana.servicio_id != habitaciones.id
 
 
 # --- AL-05: no reutilizar cliente por coincidencia parcial ----------------

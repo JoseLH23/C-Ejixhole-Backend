@@ -36,8 +36,20 @@ UNIDADES_HOSPEDAJE = [
 SERVICIOS_RESERVABLES = [
     {"nombre": "Acceso al parque", "precio": 50.00, "categoria": "entrada", "reservable": True},
     {"nombre": "Camping", "precio": 100.00, "categoria": "camping", "reservable": True},
-    {"nombre": "Cabañas", "precio": 800.00, "categoria": "hospedaje", "reservable": True},
-    {"nombre": "Habitaciones", "precio": 800.00, "categoria": "hospedaje", "reservable": True},
+    {
+        "nombre": "Cabañas",
+        "precio": 800.00,
+        "categoria": "hospedaje",
+        "tipo_unidad_hospedaje": "cabana",
+        "reservable": True,
+    },
+    {
+        "nombre": "Habitaciones",
+        "precio": 800.00,
+        "categoria": "hospedaje",
+        "tipo_unidad_hospedaje": "habitacion",
+        "reservable": True,
+    },
 ]
 
 # Las 12 actividades informativas: se contratan ya estando en el

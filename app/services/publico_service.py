@@ -81,8 +81,11 @@ class PublicoService:
         conocer ese detalle interno del catálogo. Se resuelve solo:
           - entrada  -> el servicio con categoria="entrada"
           - camping  -> el servicio con categoria="camping"
-          - hospedaje -> "Cabañas" o "Habitaciones" según el nombre de
-                         la unidad elegida (hoy son las únicas 2 categorías)
+          - hospedaje -> el servicio con tipo_unidad_hospedaje igual al
+                         tipo_unidad de la unidad elegida (ME-11:
+                         campo real y estable, nunca el nombre visible
+                         del servicio — ver migración
+                         0009_servicio_tipo_hospedaje)
         """
         if tipo_reservacion == "entrada":
             categoria = "entrada"
@@ -92,16 +95,21 @@ class PublicoService:
             unidad = self.db.query(UnidadHospedaje).filter(UnidadHospedaje.id == unidad_hospedaje_id).first()
             if not unidad:
                 raise HTTPException(status_code=404, detail="Unidad de hospedaje no encontrada.")
-            nombre_categoria_servicio = "Cabañas" if unidad.tipo_unidad == "cabana" else "Habitaciones"
             servicio = (
                 self.db.query(Servicio)
-                .filter(Servicio.nombre == nombre_categoria_servicio, Servicio.reservable.is_(True))
+                .filter(
+                    Servicio.tipo_unidad_hospedaje == unidad.tipo_unidad,
+                    Servicio.reservable.is_(True),
+                )
                 .first()
             )
             if not servicio:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"No hay un servicio '{nombre_categoria_servicio}' configurado en el catálogo.",
+                    detail=(
+                        f"No hay un servicio configurado para tipo_unidad_hospedaje="
+                        f"'{unidad.tipo_unidad}' en el catálogo."
+                    ),
                 )
             return servicio.id
 
