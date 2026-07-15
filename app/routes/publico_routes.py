@@ -27,6 +27,7 @@ from app.schemas.publico import (
     ServicioPublicoOut,
     UnidadHospedajePublicoOut,
 )
+from app.services.bloqueo_operativo_service import BloqueoOperativoService
 from app.services.publico_service import PublicoService
 
 router = APIRouter(prefix="/publico", tags=["Portal público"], dependencies=[Depends(limitar_publico)])
@@ -51,6 +52,12 @@ def verificar_disponibilidad(
     fecha_salida: date = Query(...),
     db: Session = Depends(get_db),
 ):
+    if not BloqueoOperativoService(db).hay_disponibilidad(
+        fecha_llegada,
+        fecha_salida,
+        "hospedaje",
+    ):
+        return {"disponible": False}
     disponible = PublicoService(db).hay_disponibilidad(unidad_hospedaje_id, fecha_llegada, fecha_salida)
     return {"disponible": disponible}
 
@@ -69,6 +76,11 @@ def cotizar_reservacion(
     del asistente (tipo + fechas) lo llama para mostrar el total antes
     de pedir los datos de contacto.
     """
+    BloqueoOperativoService(db).validar_disponibilidad(
+        fecha_llegada,
+        fecha_salida,
+        tipo_reservacion,
+    )
     noches, total, desglose = PublicoService(db).cotizar(
         tipo_reservacion=tipo_reservacion,
         fecha_llegada=fecha_llegada,
@@ -90,6 +102,11 @@ def crear_solicitud_reservacion(data: ReservacionPublicaCreate, request: Request
     AL-04: protegido con Idempotency-Key real — un doble clic/reintento
     de red con la misma clave nunca crea una segunda solicitud.
     """
+    BloqueoOperativoService(db).validar_disponibilidad(
+        data.fecha_llegada,
+        data.fecha_salida,
+        data.tipo_reservacion,
+    )
     servicio = PublicoService(db)
     return ejecutar_con_idempotencia(
         db,
