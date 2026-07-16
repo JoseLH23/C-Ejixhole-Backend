@@ -36,6 +36,13 @@ def _env_bool(nombre: str, default: bool) -> bool:
     return valor.strip().lower() in {"1", "true", "yes", "si", "sí", "on"}
 
 
+def _cookie_samesite() -> str:
+    valor = os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower()
+    if valor not in {"lax", "strict", "none"}:
+        raise RuntimeError("AUTH_COOKIE_SAMESITE debe ser lax, strict o none.")
+    return valor
+
+
 class Settings:
     PROJECT_NAME: str = "EjiXhole Experience OS"
     VERSION: str = "0.1.0"
@@ -49,18 +56,28 @@ class Settings:
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 
+    # ME-02 (auditoría de seguridad 13/jul/2026): default seguro
+    # "production" — si no se configura explícitamente, se asume el
+    # entorno más restrictivo (docs ocultos), no el más expuesto.
+    # Para ver /docs en desarrollo local: ENVIRONMENT=development en tu .env
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
+
+    # AL-06: la sesión administrativa vive en una cookie HttpOnly. En
+    # producción se marca Secure; desarrollo y E2E usan HTTP local.
+    AUTH_COOKIE_NAME: str = os.getenv("AUTH_COOKIE_NAME", "ejixhole_session")
+    CSRF_COOKIE_NAME: str = os.getenv("CSRF_COOKIE_NAME", "ejixhole_csrf")
+    AUTH_COOKIE_SECURE: bool = _env_bool(
+        "AUTH_COOKIE_SECURE", ENVIRONMENT == "production"
+    )
+    AUTH_COOKIE_SAMESITE: str = _cookie_samesite()
+    AUTH_COOKIE_DOMAIN: str | None = os.getenv("AUTH_COOKIE_DOMAIN", "").strip() or None
+
     # Default restrictivo: los pagos/reembolsos en efectivo solo se aceptan
     # con una caja abierta. La variable existe únicamente para aislar pruebas
     # unitarias antiguas que validan cálculos de pagos sin montar Caja.
     REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS: bool = _env_bool(
         "REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS", True
     )
-
-    # ME-02 (auditoría de seguridad 13/jul/2026): default seguro
-    # "production" — si no se configura explícitamente, se asume el
-    # entorno más restrictivo (docs ocultos), no el más expuesto.
-    # Para ver /docs en desarrollo local: ENVIRONMENT=development en tu .env
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
 
     # Notificación por correo de reservaciones nuevas del portal
     # público. Todo queda vacío por defecto a propósito: si no se
