@@ -38,9 +38,9 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
     await expect(portal.getByRole("button", { name: /Entrada/i })).toBeVisible();
 
     await portal.getByRole("button", { name: /Entrada/i }).click();
-    await portal.getByRole("button", { name: /^Fecha$/i }).click();
+    await portal.getByRole("button", { name: /^Fecha de visita$/i }).click();
 
-    const dialogoCalendario = portal.getByRole("dialog", { name: /^Fecha$/i });
+    const dialogoCalendario = portal.getByRole("dialog", { name: /^Fecha de visita$/i });
     await expect(dialogoCalendario).toBeVisible();
     await dialogoCalendario
       .getByRole("button", { name: new RegExp(`^${escaparRegex(etiquetaFecha(fechaVisita))}$`, "i") })
