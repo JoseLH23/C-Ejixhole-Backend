@@ -62,3 +62,33 @@ class TarifaEspecialOut(BaseModel):
     activa: bool
     fecha_creacion: datetime
     fecha_actualizacion: datetime
+
+
+class SimulacionTarifaInput(BaseModel):
+    servicio_id: int
+    tipo_reservacion: Literal["entrada", "camping", "hospedaje"]
+    fecha_llegada: date
+    fecha_salida: date
+    num_personas: int = Field(ge=1, le=500)
+    unidad_hospedaje_id: int | None = None
+    candidata: TarifaEspecialCreate
+
+    @model_validator(mode="after")
+    def validar_fechas(self):
+        if self.tipo_reservacion == "entrada" and self.fecha_salida != self.fecha_llegada:
+            raise ValueError("Para entrada, llegada y salida deben ser el mismo día")
+        if self.tipo_reservacion != "entrada" and self.fecha_salida <= self.fecha_llegada:
+            raise ValueError("Camping y hospedaje requieren al menos una noche")
+        if self.tipo_reservacion == "hospedaje" and self.unidad_hospedaje_id is None:
+            raise ValueError("Hospedaje requiere una unidad")
+        return self
+
+
+class SimulacionTarifaOut(BaseModel):
+    total_base: Decimal
+    total_actual: Decimal
+    total_con_candidata: Decimal
+    diferencia: Decimal
+    regla_ganadora: str | None
+    desglose: list[dict]
+    conflictos: list[str]
