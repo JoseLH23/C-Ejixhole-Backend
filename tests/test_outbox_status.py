@@ -110,6 +110,17 @@ def test_status_no_expone_payload_ni_valor_del_secret(context):
     assert SIGNING_SECRET not in response.text
 
 
+def test_url_invalida_no_reporta_canal_configurado(context, monkeypatch):
+    client, _ = context
+    monkeypatch.setenv("MH_CORE_EVENTS_URL", "https://")
+
+    response = client.get("/api/v1/integrations/mh-core/outbox/status")
+
+    assert response.status_code == 200
+    assert response.json()["events_url_configured"] is False
+    assert response.json()["configured"] is False
+
+
 def test_evento_publicado_puede_confirmarse_por_uuid(context):
     client, event_id = context
 
