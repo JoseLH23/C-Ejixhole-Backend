@@ -32,16 +32,19 @@ def test_config_predeterminada_solo_contiene_urls(monkeypatch):
     assert not hasattr(resultado, "ejecutar_real")
 
 
-def test_readiness_valida_las_piezas_publicas(monkeypatch):
+def test_readiness_valida_las_piezas_publicas_y_api_v1(monkeypatch):
+    urls_consultadas = []
+
     def json_falso(url):
+        urls_consultadas.append(url)
         if url.endswith("/health/ready"):
             return {
                 "status": "ready",
                 "checks": {"database": "up", "notifications": "configured"},
             }
-        if url.endswith("/publico/servicios"):
+        if url.endswith("/api/v1/publico/servicios"):
             return [{"nombre": "Acceso", "precio": "50.00"}]
-        if "/publico/fechas-bloqueadas?" in url:
+        if "/api/v1/publico/fechas-bloqueadas?" in url:
             return []
         raise AssertionError(f"URL inesperada: {url}")
 
@@ -56,8 +59,10 @@ def test_readiness_valida_las_piezas_publicas(monkeypatch):
 
     assert len(resultados) == 5
     assert any("PostgreSQL" in item for item in resultados)
+    assert any("API v1" in item for item in resultados)
     assert any("Portal público" in item for item in resultados)
     assert any("Panel administrativo" in item for item in resultados)
+    assert any("/api/v1/publico/servicios" in url for url in urls_consultadas)
 
 
 def test_readiness_rechaza_correo_no_configurado(monkeypatch):

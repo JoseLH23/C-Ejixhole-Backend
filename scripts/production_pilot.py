@@ -84,17 +84,17 @@ def verificar_despliegues(config: ReadinessConfig) -> list[str]:
     resultados.append(_verificar_shell("Portal público", config.portal_url))
     resultados.append(_verificar_shell("Panel administrativo", config.admin_url))
 
-    servicios = _json(_join(config.backend_url, "/publico/servicios"))
+    servicios = _json(_join(config.backend_url, "/api/v1/publico/servicios"))
     if not isinstance(servicios, list) or not servicios:
-        raise ReadinessError("El catálogo público no devolvió servicios")
-    resultados.append(f"Catálogo público disponible ({len(servicios)} servicios)")
+        raise ReadinessError("La API v1 no devolvió servicios públicos")
+    resultados.append(f"API v1 y catálogo público disponibles ({len(servicios)} servicios)")
 
     hoy = __import__("datetime").date.today().isoformat()
-    bloqueos_url = _join(config.backend_url, "/publico/fechas-bloqueadas")
+    bloqueos_url = _join(config.backend_url, "/api/v1/publico/fechas-bloqueadas")
     bloqueos = _json(f"{bloqueos_url}?desde={hoy}&hasta={hoy}")
     if not isinstance(bloqueos, list):
-        raise ReadinessError("La disponibilidad pública no devolvió una lista válida")
-    resultados.append("Consulta pública de disponibilidad operativa")
+        raise ReadinessError("La disponibilidad v1 no devolvió una lista válida")
+    resultados.append("Consulta v1 de disponibilidad operativa")
     return resultados
 
 
