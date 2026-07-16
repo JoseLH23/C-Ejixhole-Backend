@@ -1,18 +1,22 @@
-"""
-Rutas de Reservaciones. Protegidas con JWT + rol: admin y operador únicamente.
-"""
+"""Rutas de Reservaciones. Protegidas con JWT + rol admin/operador."""
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.idempotency import ejecutar_con_idempotencia
 from app.database import get_db
 from app.dependencies import require_roles
 from app.models.usuario import Usuario
-from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut, ReservacionUpdate
+from app.schemas.reservacion import (
+    ReservacionCreate,
+    ReservacionEstadoUpdate,
+    ReservacionOut,
+    ReservacionUpdate,
+)
 from app.services.bloqueo_operativo_service import BloqueoOperativoService
+from app.services.flujo_visita_service import FlujoVisitaService
 from app.services.reservacion_service import ReservacionService
 
 router = APIRouter(
@@ -108,4 +112,32 @@ def actualizar_reservacion(reservacion_id: int, data: ReservacionUpdate, db: Ses
 def cambiar_estado_reservacion(
     reservacion_id: int, data: ReservacionEstadoUpdate, db: Session = Depends(get_db)
 ):
+    # `en_curso` y `completada` tienen reglas propias (usuario, fecha y saldo).
+    # No se permite saltarlas usando el endpoint genérico de estado.
+    if data.nuevo_estado in {"en_curso", "completada"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Usa el check-in o check-out correspondiente; esos estados "
+                "no pueden asignarse directamente."
+            ),
+        )
     return ReservacionService(db).cambiar_estado(reservacion_id, data.nuevo_estado)
+
+
+@router.post("/{reservacion_id}/check-in", response_model=ReservacionOut)
+def registrar_check_in(
+    reservacion_id: int,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
+):
+    return FlujoVisitaService(db).check_in(reservacion_id, usuario_actual.id)
+
+
+@router.post("/{reservacion_id}/check-out", response_model=ReservacionOut)
+def registrar_check_out(
+    reservacion_id: int,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
+):
+    return FlujoVisitaService(db).check_out(reservacion_id, usuario_actual.id)
