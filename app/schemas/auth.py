@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class Token(BaseModel):
@@ -22,6 +22,19 @@ class UsuarioCreate(BaseModel):
 
 class UsuarioRolUpdate(BaseModel):
     rol_id: int
+
+
+class UsuarioPasswordReset(BaseModel):
+    """Contraseña temporal/nueva definida por un administrador."""
+
+    nueva_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("nueva_password")
+    @classmethod
+    def validar_password_util(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("La contraseña no puede contener solo espacios.")
+        return value
 
 
 class UsuarioOut(BaseModel):

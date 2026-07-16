@@ -1,7 +1,6 @@
 """
-Rutas de Usuarios (listar, listar roles, desactivar, editar rol). Solo
-admin — mismo criterio que POST /auth/usuarios (crear), que también es
-admin-only.
+Rutas de Usuarios. Solo admin — mismo criterio que POST /auth/usuarios
+(crear), que también es admin-only.
 
 La creación de usuarios se queda en /auth/usuarios (auth_routes.py) a
 propósito, no se mueve aquí — evita romper al frontend que ya la
@@ -12,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_roles
-from app.schemas.auth import RolOut, UsuarioOut, UsuarioRolUpdate
+from app.schemas.auth import RolOut, UsuarioOut, UsuarioPasswordReset, UsuarioRolUpdate
 from app.services.usuario_service import UsuarioService
 
 router = APIRouter(
@@ -23,7 +22,11 @@ router = APIRouter(
 
 
 @router.get("", response_model=list[UsuarioOut])
-def listar_usuarios(limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+def listar_usuarios(
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
     service = UsuarioService(db)
     return service.listar(limit=limit, offset=offset)
 
@@ -44,10 +47,31 @@ def desactivar_usuario(usuario_id: int, db: Session = Depends(get_db)):
     return service.desactivar(usuario_id)
 
 
+@router.patch("/{usuario_id}/reactivar", response_model=UsuarioOut)
+def reactivar_usuario(usuario_id: int, db: Session = Depends(get_db)):
+    """Revierte el soft delete y permite que la cuenta vuelva a iniciar sesión."""
+    service = UsuarioService(db)
+    return service.reactivar(usuario_id)
+
+
 @router.patch("/{usuario_id}/rol", response_model=UsuarioOut)
-def actualizar_rol_usuario(usuario_id: int, data: UsuarioRolUpdate, db: Session = Depends(get_db)):
+def actualizar_rol_usuario(
+    usuario_id: int,
+    data: UsuarioRolUpdate,
+    db: Session = Depends(get_db),
+):
     """Cambia el rol de un usuario existente. Misma protección que
-    desactivar: nunca deja el sistema sin ningún admin activo (ver
-    UsuarioService.actualizar_rol)."""
+    desactivar: nunca deja el sistema sin ningún admin activo."""
     service = UsuarioService(db)
     return service.actualizar_rol(usuario_id, data.rol_id)
+
+
+@router.patch("/{usuario_id}/password", response_model=UsuarioOut)
+def restablecer_password_usuario(
+    usuario_id: int,
+    data: UsuarioPasswordReset,
+    db: Session = Depends(get_db),
+):
+    """Define una contraseña nueva. Nunca devuelve ni registra la contraseña."""
+    service = UsuarioService(db)
+    return service.restablecer_password(usuario_id, data.nueva_password)

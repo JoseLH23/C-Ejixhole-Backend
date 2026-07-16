@@ -50,8 +50,20 @@ class UsuarioRepository:
         self.db.refresh(usuario)
         return usuario
 
+    def reactivar(self, usuario: Usuario) -> Usuario:
+        usuario.activo = True
+        self.db.commit()
+        self.db.refresh(usuario)
+        return usuario
+
     def actualizar_rol(self, usuario: Usuario, rol_id: int) -> Usuario:
         usuario.rol_id = rol_id
+        self.db.commit()
+        self.db.refresh(usuario)
+        return usuario
+
+    def actualizar_password(self, usuario: Usuario, password_hash: str) -> Usuario:
+        usuario.password_hash = password_hash
         self.db.commit()
         self.db.refresh(usuario)
         return usuario
