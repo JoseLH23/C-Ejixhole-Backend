@@ -217,7 +217,12 @@ def test_error_503_programa_reintento_con_backoff():
     assert stats.retried == 1
     assert stored.status == "failed"
     assert stored.attempts == 1
-    assert stored.available_at == NOW + timedelta(seconds=10)
+    # SQLite elimina la zona horaria al persistir DateTime; PostgreSQL conserva
+    # TIMESTAMPTZ. Normalizamos únicamente el valor del doble de prueba.
+    available_at = stored.available_at
+    if available_at.tzinfo is None:
+        available_at = available_at.replace(tzinfo=timezone.utc)
+    assert available_at == NOW + timedelta(seconds=10)
     assert stored.last_http_status == 503
     engine.dispose()
 
