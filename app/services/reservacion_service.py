@@ -15,6 +15,13 @@ from app.services.outbox_service import OutboxService
 from app.services.tarifa_especial_service import TarifaEspecialService
 
 ESTADOS_TERMINALES = ("completada", "cancelada")
+TRANSICIONES_MANUALES = {
+    "pendiente": frozenset({"confirmada", "cancelada"}),
+    "confirmada": frozenset({"cancelada"}),
+    "en_curso": frozenset(),
+    "completada": frozenset(),
+    "cancelada": frozenset(),
+}
 
 
 def _es_violacion_de_traslape(error: IntegrityError) -> bool:
@@ -282,6 +289,16 @@ class ReservacionService:
             )
         if reservacion.estado == nuevo_estado:
             raise HTTPException(status_code=400, detail=f"La reservación ya está en estado '{nuevo_estado}'.")
+
+        permitidos = TRANSICIONES_MANUALES.get(reservacion.estado, frozenset())
+        if nuevo_estado not in permitidos:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"No se permite cambiar una reservación de '{reservacion.estado}' "
+                    f"a '{nuevo_estado}'."
+                ),
+            )
 
         def operacion():
             reservacion.estado = nuevo_estado
