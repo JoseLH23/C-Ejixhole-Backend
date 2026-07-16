@@ -15,7 +15,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     env:
       BACKEND_URL: ${{ secrets.EJIXHOLE_BACKEND_URL }}
       DISPATCH_KEY: ${{ secrets.OUTBOX_DISPATCH_KEY }}
@@ -38,8 +38,8 @@ jobs:
           endpoint="${BACKEND_URL%/}/api/v1/integrations/mh-core/outbox/publish"
           response_file="$(mktemp)"
           http_status=$(curl --silent --show-error --location \
-            --retry 3 --retry-all-errors --retry-delay 10 \
-            --connect-timeout 30 --max-time 180 \
+            --retry 1 --retry-all-errors --retry-delay 15 \
+            --connect-timeout 45 --max-time 900 \
             --output "$response_file" --write-out "%{http_code}" \
             --request POST \
             --header "Accept: application/json" \
