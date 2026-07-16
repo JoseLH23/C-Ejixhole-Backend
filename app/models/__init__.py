@@ -14,3 +14,4 @@ from app.models.configuracion import Configuracion, Respaldo  # noqa: F401
 from app.models.idempotency_key import IdempotencyKey  # noqa: F401
 from app.models.evento_calendario import EventoCalendario  # noqa: F401
 from app.models.tarifa_especial import TarifaEspecial  # noqa: F401
+from app.models.outbox_event import OutboxEvent  # noqa: F401
