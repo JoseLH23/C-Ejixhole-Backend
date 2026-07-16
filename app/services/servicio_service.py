@@ -7,10 +7,9 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.reservacion import ESTADOS_ACTIVOS
 from app.models.servicio import Servicio
 from app.repositories.servicio_repository import ServicioRepository
-
-ESTADOS_ACTIVOS_RESERVACION = ("pendiente", "confirmada")
 
 
 class ServicioService:
@@ -55,7 +54,7 @@ class ServicioService:
             reservaciones_futuras_grandes = [
                 r
                 for r in servicio.reservaciones
-                if r.estado in ESTADOS_ACTIVOS_RESERVACION and r.num_personas > nueva_capacidad
+                if r.estado in ESTADOS_ACTIVOS and r.num_personas > nueva_capacidad
             ]
             if reservaciones_futuras_grandes:
                 ids = ", ".join(str(r.id) for r in reservaciones_futuras_grandes)
@@ -74,7 +73,7 @@ class ServicioService:
         servicio = self.obtener_por_id(servicio_id)
 
         reservacion_activa = next(
-            (r for r in servicio.reservaciones if r.estado in ESTADOS_ACTIVOS_RESERVACION), None
+            (r for r in servicio.reservaciones if r.estado in ESTADOS_ACTIVOS), None
         )
         if reservacion_activa:
             raise HTTPException(
