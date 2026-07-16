@@ -16,7 +16,18 @@ def test_liveness_responde_sin_dependencias_externas():
 
 
 def test_readiness_confirma_base_de_datos():
-    response = client.get("/health/ready")
+    class SesionDisponible:
+        def execute(self, _query):
+            return 1
+
+    def db_disponible():
+        yield SesionDisponible()
+
+    app.dependency_overrides[get_db] = db_disponible
+    try:
+        response = client.get("/health/ready")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
     assert response.status_code == 200
     payload = response.json()
