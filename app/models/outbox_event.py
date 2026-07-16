@@ -3,7 +3,18 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import JSON, CheckConstraint, Column, DateTime, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 
 from app.database import Base
 
@@ -18,6 +29,12 @@ class OutboxEvent(Base):
         CheckConstraint(
             "status IN ('pending', 'published', 'failed')",
             name="ck_outbox_events_status",
+        ),
+        Index(
+            "ix_outbox_events_pending_delivery",
+            "status",
+            "available_at",
+            "created_at",
         ),
     )
 
