@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -19,7 +19,7 @@ class TarifaEspecial(Base):
     fecha_fin = Column(Date, nullable=False, index=True)
     porcentaje_ajuste = Column(Numeric(7, 2), nullable=False)
     aplica_a = Column(String(20), nullable=False, default="todos")
-    dias_semana = Column(String(20), nullable=True)
+    dias_semana = Column(JSON, nullable=True)
     prioridad = Column(Integer, nullable=False, default=0)
     unidad_hospedaje_id = Column(Integer, ForeignKey("unidades_hospedaje.id", ondelete="CASCADE"), nullable=True)
     activa = Column(Boolean, nullable=False, default=True)
