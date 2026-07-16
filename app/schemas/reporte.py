@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 
 class SerieIngresoItem(BaseModel):
@@ -90,6 +90,15 @@ class ReporteReservacionesPorEstadoOut(BaseModel):
     hasta: date
     total: int
     por_estado: dict[str, int]
+
+    @field_serializer("por_estado")
+    def serializar_por_estado(self, conteos: dict[str, int]) -> dict[str, int]:
+        """Mantiene compatible la respuesta anterior mientras no exista
+        ninguna visita en curso. En cuanto haya una, el estado se incluye
+        normalmente en el reporte."""
+        if conteos.get("en_curso") == 0:
+            return {estado: cantidad for estado, cantidad in conteos.items() if estado != "en_curso"}
+        return conteos
 
 
 class CancelacionPorServicioItem(BaseModel):
