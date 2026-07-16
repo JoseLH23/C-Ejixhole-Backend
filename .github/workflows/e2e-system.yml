@@ -1,0 +1,167 @@
+name: E2E sistema completo
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 8 * * *"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "alembic/**"
+      - "scripts/seed_e2e.py"
+      - "e2e/**"
+      - ".github/workflows/e2e-system.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "alembic/**"
+      - "scripts/seed_e2e.py"
+      - "e2e/**"
+      - ".github/workflows/e2e-system.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-system-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ejixhole_e2e
+  JWT_SECRET_KEY: e2e-only-secret-key-with-more-than-thirty-two-characters
+  JWT_EXPIRE_MINUTES: "60"
+  ENVIRONMENT: e2e
+  REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS: "true"
+  E2E_ADMIN_EMAIL: admin.e2e@example.com
+  E2E_ADMIN_PASSWORD: E2E-Password-2026!
+  E2E_ADMIN_NAME: Administración E2E
+  BACKEND_URL: http://127.0.0.1:8000
+  ADMIN_URL: http://127.0.0.1:5173
+  PORTAL_URL: http://127.0.0.1:5174
+
+jobs:
+  e2e:
+    name: Navegador + PostgreSQL temporal
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ejixhole_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ejixhole_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Descargar backend
+        uses: actions/checkout@v7
+
+      - name: Descargar panel administrativo
+        uses: actions/checkout@v7
+        with:
+          repository: JoseLH23/ejixhole-frontend
+          ref: main
+          path: apps/admin
+
+      - name: Descargar portal público
+        uses: actions/checkout@v7
+        with:
+          repository: JoseLH23/ejixhole-reservas
+          ref: main
+          path: apps/portal
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar backend
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Preparar base desechable
+        run: |
+          alembic upgrade head
+          python -m scripts.seed_e2e
+
+      - name: Iniciar backend
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/ejixhole-backend.log 2>&1 &
+          echo $! > /tmp/ejixhole-backend.pid
+          for intento in {1..60}; do
+            if curl --fail --silent "$BACKEND_URL/health/ready" > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ejixhole-backend.log
+          exit 1
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            apps/admin/package-lock.json
+            apps/portal/package-lock.json
+
+      - name: Instalar aplicaciones web
+        run: |
+          npm ci --prefix apps/admin
+          npm ci --prefix apps/portal
+
+      - name: Iniciar panel y portal
+        run: |
+          (cd apps/admin && VITE_API_BASE_URL="$BACKEND_URL" nohup npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/ejixhole-admin.log 2>&1 & echo $! > /tmp/ejixhole-admin.pid)
+          (cd apps/portal && VITE_API_URL="$BACKEND_URL" nohup npm run dev -- --host 127.0.0.1 --port 5174 > /tmp/ejixhole-portal.log 2>&1 & echo $! > /tmp/ejixhole-portal.pid)
+
+          for url in "$ADMIN_URL" "$PORTAL_URL"; do
+            listo=false
+            for intento in {1..90}; do
+              if curl --fail --silent "$url" > /dev/null; then
+                listo=true
+                break
+              fi
+              sleep 1
+            done
+            if [ "$listo" != "true" ]; then
+              cat /tmp/ejixhole-admin.log || true
+              cat /tmp/ejixhole-portal.log || true
+              exit 1
+            fi
+          done
+
+      - name: Instalar Playwright
+        working-directory: e2e
+        run: |
+          npm install --no-package-lock
+          npx playwright install --with-deps chromium
+
+      - name: Ejecutar recorrido completo
+        working-directory: e2e
+        run: npm test
+
+      - name: Adjuntar evidencias y logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-system-evidence-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            /tmp/ejixhole-backend.log
+            /tmp/ejixhole-admin.log
+            /tmp/ejixhole-portal.log
