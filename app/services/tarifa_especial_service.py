@@ -1,10 +1,12 @@
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.models.servicio import Servicio
 from app.models.tarifa_especial import TarifaEspecial
 from app.models.unidad_hospedaje import UnidadHospedaje
 
@@ -58,8 +60,8 @@ class TarifaEspecialService:
         self.db.delete(tarifa)
         self.db.commit()
 
-    def _regla_para_fecha(self, fecha: date, tipo: str, unidad_hospedaje_id: int | None):
-        reglas = (
+    def _reglas_para_fecha(self, fecha: date, tipo: str, unidad_hospedaje_id: int | None):
+        return (
             self.db.query(TarifaEspecial)
             .filter(
                 TarifaEspecial.activa.is_(True),
@@ -71,19 +73,17 @@ class TarifaEspecialService:
             .order_by(TarifaEspecial.prioridad.desc(), TarifaEspecial.id.desc())
             .all()
         )
-        return next((regla for regla in reglas if not regla.dias_semana or fecha.weekday() in regla.dias_semana), None)
 
-    def calcular_ajustes(
-        self,
-        *,
-        tipo: str,
-        fecha_llegada: date,
-        fecha_salida: date,
-        unidad_hospedaje_id: int | None,
-        base_diaria: Decimal,
-    ) -> tuple[Decimal, list[dict]]:
+    @staticmethod
+    def _aplica_dia(regla, fecha: date) -> bool:
+        return not regla.dias_semana or fecha.weekday() in regla.dias_semana
+
+    def _regla_para_fecha(self, fecha: date, tipo: str, unidad_hospedaje_id: int | None):
+        return next((regla for regla in self._reglas_para_fecha(fecha, tipo, unidad_hospedaje_id) if self._aplica_dia(regla, fecha)), None)
+
+    def calcular_ajustes(self, *, tipo: str, fecha_llegada: date, fecha_salida: date, unidad_hospedaje_id: int | None, base_diaria: Decimal) -> tuple[Decimal, list[dict]]:
         fechas = [fecha_llegada] if tipo == "entrada" else [fecha_llegada + timedelta(days=i) for i in range((fecha_salida - fecha_llegada).days)]
-        acumulado: dict[int, dict] = {}
+        acumulado: dict[str, dict] = {}
         total_ajuste = Decimal("0")
         for fecha in fechas:
             regla = self._regla_para_fecha(fecha, tipo, unidad_hospedaje_id)
@@ -91,16 +91,76 @@ class TarifaEspecialService:
                 continue
             ajuste = (base_diaria * regla.porcentaje_ajuste / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             total_ajuste += ajuste
-            item = acumulado.setdefault(regla.id, {"regla": regla, "dias": 0, "subtotal": Decimal("0")})
+            item = acumulado.setdefault(str(regla.id), {"regla": regla, "dias": 0, "subtotal": Decimal("0")})
             item["dias"] += 1
             item["subtotal"] += ajuste
         desglose = []
         for item in acumulado.values():
             regla = item["regla"]
             signo = "+" if regla.porcentaje_ajuste >= 0 else ""
-            desglose.append({
-                "concepto": regla.nombre,
-                "detalle": f"{signo}{regla.porcentaje_ajuste}% x {item['dias']} día(s)",
-                "subtotal": item["subtotal"],
-            })
+            desglose.append({"concepto": regla.nombre, "detalle": f"{signo}{regla.porcentaje_ajuste}% x {item['dias']} día(s)", "subtotal": item["subtotal"]})
         return total_ajuste, desglose
+
+    def _calcular_base(self, *, servicio_id: int, tipo: str, fecha_llegada: date, fecha_salida: date, unidad_hospedaje_id: int | None, num_personas: int) -> Decimal:
+        servicio = self.db.query(Servicio).filter(Servicio.id == servicio_id, Servicio.activo.is_(True)).first()
+        if not servicio:
+            raise HTTPException(status_code=404, detail="Servicio no encontrado o inactivo")
+        entrada = self.db.query(Servicio).filter(Servicio.categoria == "entrada", Servicio.reservable.is_(True), Servicio.activo.is_(True)).first()
+        if not entrada:
+            raise HTTPException(status_code=500, detail="No hay precio de entrada activo")
+        noches = 1 if tipo == "entrada" else (fecha_salida - fecha_llegada).days
+        if tipo == "entrada":
+            return entrada.precio * num_personas
+        if tipo == "camping":
+            return (entrada.precio + servicio.precio) * num_personas * noches
+        unidad = self.db.query(UnidadHospedaje).filter(UnidadHospedaje.id == unidad_hospedaje_id, UnidadHospedaje.activa.is_(True)).first()
+        if not unidad:
+            raise HTTPException(status_code=404, detail="Unidad de hospedaje no encontrada o inactiva")
+        if num_personas > unidad.capacidad_maxima:
+            raise HTTPException(status_code=400, detail=f"{unidad.nombre} admite máximo {unidad.capacidad_maxima} personas")
+        return entrada.precio * num_personas * noches + unidad.precio_por_noche * noches
+
+    def simular(self, *, servicio_id: int, tipo_reservacion: str, fecha_llegada: date, fecha_salida: date, num_personas: int, unidad_hospedaje_id: int | None, candidata: dict) -> dict:
+        total_base = self._calcular_base(servicio_id=servicio_id, tipo=tipo_reservacion, fecha_llegada=fecha_llegada, fecha_salida=fecha_salida, unidad_hospedaje_id=unidad_hospedaje_id, num_personas=num_personas)
+        dias = 1 if tipo_reservacion == "entrada" else (fecha_salida - fecha_llegada).days
+        base_diaria = total_base / Decimal(dias)
+        ajuste_actual, _ = self.calcular_ajustes(tipo=tipo_reservacion, fecha_llegada=fecha_llegada, fecha_salida=fecha_salida, unidad_hospedaje_id=unidad_hospedaje_id, base_diaria=base_diaria)
+        candidata_obj = SimpleNamespace(id="candidata", **candidata)
+        fechas = [fecha_llegada] if tipo_reservacion == "entrada" else [fecha_llegada + timedelta(days=i) for i in range(dias)]
+        acumulado: dict[str, dict] = {}
+        conflictos: set[str] = set()
+        total_ajuste = Decimal("0")
+        ganadora: str | None = None
+        for fecha in fechas:
+            reglas = [r for r in self._reglas_para_fecha(fecha, tipo_reservacion, unidad_hospedaje_id) if self._aplica_dia(r, fecha)]
+            candidata_aplica = (
+                candidata_obj.fecha_inicio <= fecha <= candidata_obj.fecha_fin
+                and candidata_obj.aplica_a in ("todos", tipo_reservacion)
+                and (candidata_obj.unidad_hospedaje_id is None or candidata_obj.unidad_hospedaje_id == unidad_hospedaje_id)
+                and self._aplica_dia(candidata_obj, fecha)
+            )
+            if candidata_aplica:
+                for regla in reglas:
+                    conflictos.add(regla.nombre)
+                reglas.append(candidata_obj)
+            if not reglas:
+                continue
+            regla = max(reglas, key=lambda r: (r.prioridad, 1 if r.id == "candidata" else 0, str(r.id)))
+            ganadora = regla.nombre
+            ajuste = (base_diaria * regla.porcentaje_ajuste / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            total_ajuste += ajuste
+            key = str(regla.id)
+            item = acumulado.setdefault(key, {"nombre": regla.nombre, "porcentaje": regla.porcentaje_ajuste, "dias": 0, "subtotal": Decimal("0")})
+            item["dias"] += 1
+            item["subtotal"] += ajuste
+        desglose = [{"concepto": i["nombre"], "detalle": f"{i['porcentaje']}% x {i['dias']} día(s)", "subtotal": i["subtotal"]} for i in acumulado.values()]
+        total_candidata = total_base + total_ajuste
+        return {
+            "total_base": total_base,
+            "total_actual": total_base + ajuste_actual,
+            "total_con_candidata": total_candidata,
+            "diferencia": total_candidata - (total_base + ajuste_actual),
+            "regla_ganadora": ganadora,
+            "desglose": desglose,
+            "conflictos": sorted(conflictos),
+        }
