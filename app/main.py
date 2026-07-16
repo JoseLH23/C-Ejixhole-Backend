@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.observability import RequestObservabilityMiddleware
 from app.routes import (
     auth_routes,
     caja_routes,
@@ -28,6 +29,7 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs_habilitados else None,
 )
 
+app.add_middleware(RequestObservabilityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
