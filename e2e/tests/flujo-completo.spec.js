@@ -118,7 +118,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
     await pagos.getByRole("button", { name: "Registrar pago", exact: true }).click();
     await expect(admin.getByText("Pago registrado", { exact: true })).toBeVisible();
     await expect(pagos.getByText("$100.00", { exact: true }).first()).toBeVisible();
-    await pagos.getByRole("button", { name: "Cerrar", exact: true }).click();
+    await pagos.getByRole("button", { name: "Cerrar", exact: true }).first().click();
 
     await expect(fila).toContainText("$0.00");
     await fila.getByRole("button", { name: "Check-in", exact: true }).click();
