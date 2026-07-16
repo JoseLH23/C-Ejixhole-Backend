@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.outbox_event import OUTBOX_STATUSES, OutboxEvent
@@ -37,7 +38,7 @@ class OutboxStatusService:
 
     def status(self) -> OutboxChannelStatusOut:
         rows = (
-            self.db.query(OutboxEvent.status, __import__("sqlalchemy").func.count(OutboxEvent.id))
+            self.db.query(OutboxEvent.status, func.count(OutboxEvent.id))
             .group_by(OutboxEvent.status)
             .all()
         )
