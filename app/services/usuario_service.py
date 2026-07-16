@@ -1,11 +1,12 @@
 """
-Service de Usuarios (listar, listar roles, desactivar). La creación
-(`crear_usuario`) sigue viviendo en AuthService — no se duplica aquí,
-se reutiliza tal cual.
+Service de Usuarios (listar, listar roles, desactivar, reactivar, editar rol
+y restablecer contraseña). La creación (`crear_usuario`) sigue viviendo en
+AuthService — no se duplica aquí, se reutiliza tal cual.
 """
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.models.usuario import Rol, Usuario
 from app.repositories.usuario_repository import UsuarioRepository
 
@@ -39,6 +40,16 @@ class UsuarioService:
 
         return self.repo.desactivar(usuario)
 
+    def reactivar(self, usuario_id: int) -> Usuario:
+        usuario = self.repo.obtener_por_id(usuario_id)
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+        if usuario.activo:
+            raise HTTPException(status_code=400, detail="Este usuario ya está activo.")
+
+        return self.repo.reactivar(usuario)
+
     def actualizar_rol(self, usuario_id: int, rol_id: int) -> Usuario:
         usuario = self.repo.obtener_por_id(usuario_id)
         if not usuario:
@@ -62,3 +73,10 @@ class UsuarioService:
             )
 
         return self.repo.actualizar_rol(usuario, rol_id)
+
+    def restablecer_password(self, usuario_id: int, nueva_password: str) -> Usuario:
+        usuario = self.repo.obtener_por_id(usuario_id)
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+        return self.repo.actualizar_password(usuario, hash_password(nueva_password))
