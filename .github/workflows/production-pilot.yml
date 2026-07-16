@@ -1,0 +1,121 @@
+name: Checklist y piloto de producción
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Solo verificar o ejecutar el recorrido real"
+        required: true
+        type: choice
+        default: readiness
+        options:
+          - readiness
+          - full-pilot
+      confirmation:
+        description: "Para full-pilot escribe EJECUTAR_PILOTO_REAL"
+        required: false
+        type: string
+      visit_date:
+        description: "Fecha simulada YYYY-MM-DD; vacío usa hoy + 14 días"
+        required: false
+        type: string
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/production_pilot.py"
+      - "tests/test_production_pilot.py"
+      - "docs/production-pilot.md"
+      - ".github/workflows/production-pilot.yml"
+
+permissions:
+  contents: read
+
+env:
+  BACKEND_URL: https://c-ejixhole-backend.onrender.com
+  PORTAL_URL: https://ejixhole-reservas.vercel.app/
+  ADMIN_URL: https://ejixhole-frontend.vercel.app/
+
+jobs:
+  readiness:
+    name: Verificar despliegues sin modificar datos
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Ejecutar checklist público con reintentos
+        env:
+          PILOT_RUN_ID: readiness-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          for intento in 1 2 3 4; do
+            if python -m scripts.production_pilot; then
+              exit 0
+            fi
+            if [ "$intento" -lt 4 ]; then
+              echo "Reintento $intento/3 después de posible arranque en frío..."
+              sleep 20
+            fi
+          done
+          exit 1
+
+      - name: Adjuntar reporte
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-readiness-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 30
+          path: production-pilot-report.md
+
+  full-pilot:
+    name: Ejecutar piloto operativo real controlado
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'full-pilot' &&
+      inputs.confirmation == 'EJECUTAR_PILOTO_REAL'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production-pilot
+    concurrency:
+      group: ejixhole-production-pilot
+      cancel-in-progress: false
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Validar credenciales protegidas
+        env:
+          PILOT_ADMIN_EMAIL: ${{ secrets.PILOT_ADMIN_EMAIL }}
+          PILOT_ADMIN_PASSWORD: ${{ secrets.PILOT_ADMIN_PASSWORD }}
+        run: |
+          test -n "$PILOT_ADMIN_EMAIL" || (echo "Falta el secret PILOT_ADMIN_EMAIL" && exit 1)
+          test -n "$PILOT_ADMIN_PASSWORD" || (echo "Falta el secret PILOT_ADMIN_PASSWORD" && exit 1)
+
+      - name: Ejecutar recorrido real
+        env:
+          PILOT_CONFIRMATION: EJECUTAR_PILOTO_REAL
+          PILOT_ADMIN_EMAIL: ${{ secrets.PILOT_ADMIN_EMAIL }}
+          PILOT_ADMIN_PASSWORD: ${{ secrets.PILOT_ADMIN_PASSWORD }}
+          PILOT_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+          PILOT_VISIT_DATE: ${{ inputs.visit_date }}
+        run: python -m scripts.production_pilot
+
+      - name: Adjuntar acta del piloto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-pilot-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 90
+          path: production-pilot-report.md
