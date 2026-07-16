@@ -19,7 +19,7 @@ from sqlalchemy import (
 from app.database import Base
 
 
-OUTBOX_STATUSES = ("pending", "published", "failed")
+OUTBOX_STATUSES = ("pending", "processing", "published", "failed", "dead_letter")
 
 
 class OutboxEvent(Base):
@@ -27,7 +27,7 @@ class OutboxEvent(Base):
     __table_args__ = (
         UniqueConstraint("event_key", name="uq_outbox_events_event_key"),
         CheckConstraint(
-            "status IN ('pending', 'published', 'failed')",
+            "status IN ('pending', 'processing', 'published', 'failed', 'dead_letter')",
             name="ck_outbox_events_status",
         ),
         Index(
@@ -56,5 +56,10 @@ class OutboxEvent(Base):
     available_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     occurred_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     published_at = Column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at = Column(DateTime(timezone=True), nullable=True)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    locked_by = Column(String(100), nullable=True)
+    last_http_status = Column(Integer, nullable=True)
     last_error = Column(Text, nullable=True)
+    last_response = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
