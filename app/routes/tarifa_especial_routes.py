@@ -3,7 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_roles
-from app.schemas.tarifa_especial import TarifaEspecialCreate, TarifaEspecialOut, TarifaEspecialUpdate
+from app.schemas.tarifa_especial import (
+    SimulacionTarifaInput,
+    SimulacionTarifaOut,
+    TarifaEspecialCreate,
+    TarifaEspecialOut,
+    TarifaEspecialUpdate,
+)
 from app.services.tarifa_especial_service import TarifaEspecialService
 
 router = APIRouter(
@@ -16,6 +22,14 @@ router = APIRouter(
 @router.get("", response_model=list[TarifaEspecialOut])
 def listar_tarifas(db: Session = Depends(get_db)):
     return TarifaEspecialService(db).listar()
+
+
+@router.post("/simular", response_model=SimulacionTarifaOut)
+def simular_tarifa(data: SimulacionTarifaInput, db: Session = Depends(get_db)):
+    payload = data.model_dump()
+    candidata = payload.pop("candidata")
+    candidata["activa"] = True
+    return TarifaEspecialService(db).simular(**payload, candidata=candidata)
 
 
 @router.post("", response_model=TarifaEspecialOut, status_code=201)
