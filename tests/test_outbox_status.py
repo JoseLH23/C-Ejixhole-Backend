@@ -16,6 +16,9 @@ from app.models.outbox_event import OutboxEvent
 from app.models.usuario import Rol, Usuario
 
 
+SIGNING_SECRET = "s" * 48
+
+
 @pytest.fixture()
 def context(monkeypatch):
     engine = create_engine(
@@ -68,7 +71,7 @@ def context(monkeypatch):
         "MH_CORE_EVENTS_URL",
         "https://mh-core.example.test/integrations/ejixhole/events",
     )
-    monkeypatch.setenv("MH_CORE_EVENT_SIGNING_SECRET", "s" * 48)
+    monkeypatch.setenv("MH_CORE_EVENT_SIGNING_SECRET", SIGNING_SECRET)
     token = create_access_token(subject=user.email, rol="admin")
     client = TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
@@ -88,7 +91,7 @@ def test_status_es_v1_y_requiere_admin(context):
     assert response.status_code == 401
 
 
-def test_status_no_expone_payload_ni_secret(context):
+def test_status_no_expone_payload_ni_valor_del_secret(context):
     client, event_id = context
 
     response = client.get("/api/v1/integrations/mh-core/outbox/status")
@@ -97,13 +100,14 @@ def test_status_no_expone_payload_ni_secret(context):
     assert response.headers["X-API-Version"] == "v1"
     payload = response.json()
     assert payload["configured"] is True
+    assert payload["signing_secret_configured"] is True
     assert payload["total_events"] == 1
     assert payload["by_status"]["published"] == 1
     assert payload["pending_delivery"] == 0
     assert payload["latest_published"]["event_id"] == event_id
     serialized = response.text.lower()
     assert "payload" not in serialized
-    assert "signing_secret" not in serialized
+    assert SIGNING_SECRET not in response.text
 
 
 def test_evento_publicado_puede_confirmarse_por_uuid(context):
