@@ -81,7 +81,7 @@ def _crear_reservacion(db, cliente, servicio, usuario, *, dia: int):
         fecha_salida=fecha,
         unidad_hospedaje_id=None,
         num_personas=1,
-        origen="interno",
+        origen="recepcion",
         notas="Esta nota privada tampoco debe viajar.",
     )
 
