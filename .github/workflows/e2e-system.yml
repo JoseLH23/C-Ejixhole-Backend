@@ -34,7 +34,7 @@ env:
   JWT_EXPIRE_MINUTES: "60"
   ENVIRONMENT: e2e
   REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS: "true"
-  E2E_ADMIN_EMAIL: admin.e2e@ejixhole.test
+  E2E_ADMIN_EMAIL: admin.e2e@example.com
   E2E_ADMIN_PASSWORD: E2E-Password-2026!
   E2E_ADMIN_NAME: Administración E2E
   BACKEND_URL: http://127.0.0.1:8000
