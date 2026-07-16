@@ -1,23 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import api_v1_router, legacy_router
+from app.core.api_versioning import ApiVersioningMiddleware
 from app.core.config import settings
 from app.core.observability import RequestObservabilityMiddleware
-from app.routes import (
-    auth_routes,
-    caja_routes,
-    cliente_routes,
-    dashboard_routes,
-    evento_calendario_routes,
-    health_routes,
-    pago_routes,
-    publico_routes,
-    reporte_routes,
-    reservacion_routes,
-    servicio_routes,
-    tarifa_especial_routes,
-    usuario_routes,
-)
+from app.routes import health_routes
 
 _docs_habilitados = settings.ENVIRONMENT != "production"
 
@@ -30,6 +18,7 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestObservabilityMiddleware)
+app.add_middleware(ApiVersioningMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -51,26 +40,31 @@ app.add_middleware(
     ],
 )
 
+# Infraestructura: no forma parte del contrato versionado de negocio.
 app.include_router(health_routes.router)
-app.include_router(cliente_routes.router)
-app.include_router(reservacion_routes.router)
-app.include_router(pago_routes.router)
-app.include_router(servicio_routes.router)
-app.include_router(auth_routes.router)
-app.include_router(caja_routes.router)
-app.include_router(reporte_routes.router)
-app.include_router(dashboard_routes.router)
-app.include_router(publico_routes.router)
-app.include_router(usuario_routes.router)
-app.include_router(evento_calendario_routes.router)
-app.include_router(tarifa_especial_routes.router)
+
+# Contrato estable para panel, portal, MH-Core y futuras aplicaciones.
+app.include_router(api_v1_router)
+
+# Compatibilidad temporal. Estas rutas aparecen como deprecadas en OpenAPI y
+# devuelven cabeceras que señalan su equivalente bajo /api/v1.
+app.include_router(legacy_router)
 
 
 @app.get("/")
 def home():
-    return {"message": f"{settings.PROJECT_NAME} API - Running"}
+    return {
+        "message": f"{settings.PROJECT_NAME} API - Running",
+        "current_api": "/api/v1",
+    }
 
 
 @app.get("/status")
 def status():
-    return {"status": "online", "project": settings.PROJECT_NAME, "version": settings.VERSION}
+    return {
+        "status": "online",
+        "project": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "api_version": "v1",
+        "api_prefix": "/api/v1",
+    }
