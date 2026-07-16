@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const PORTAL_URL = process.env.PORTAL_URL ?? "http://127.0.0.1:5174";
 const ADMIN_URL = process.env.ADMIN_URL ?? "http://127.0.0.1:5173";
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin.e2e@ejixhole.test";
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin.e2e@example.com";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "E2E-Password-2026!";
 
 function escaparRegex(texto) {
