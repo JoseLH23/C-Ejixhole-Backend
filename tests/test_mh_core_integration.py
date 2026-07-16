@@ -2,8 +2,11 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 import json
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.core.service_auth import require_mh_core_readonly
 from app.main import app
 from app.services.integracion_mh_service import IntegracionMhService
 
@@ -58,6 +61,16 @@ def test_integracion_rechaza_credencial_incorrecta(monkeypatch):
     assert response.status_code == 401
 
 
+def test_integracion_rechaza_unicode_sin_error_500(monkeypatch):
+    monkeypatch.setenv("MH_CORE_SERVICE_KEY", CLAVE)
+
+    with pytest.raises(HTTPException) as error:
+        require_mh_core_readonly(x_mh_service_key="clave-inválida-ñ")
+
+    assert error.value.status_code == 401
+    assert error.value.detail == "Credencial de servicio inválida o faltante."
+
+
 def test_integracion_entrega_solo_metricas_agregadas(monkeypatch):
     monkeypatch.setenv("MH_CORE_SERVICE_KEY", CLAVE)
     monkeypatch.setattr(
@@ -84,5 +97,4 @@ def test_integracion_no_acepta_escrituras(monkeypatch):
     monkeypatch.setenv("MH_CORE_SERVICE_KEY", CLAVE)
 
     response = client.post(RUTA, headers={"X-MH-Service-Key": CLAVE}, json={})
-
     assert response.status_code == 405

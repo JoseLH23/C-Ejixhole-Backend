@@ -11,9 +11,17 @@ from app.models.reservacion import ESTADOS_RESERVACION, Reservacion
 from app.models.servicio import Servicio
 from app.models.unidad_hospedaje import UnidadHospedaje
 from app.repositories.reservacion_repository import ReservacionRepository
+from app.services.outbox_service import OutboxService
 from app.services.tarifa_especial_service import TarifaEspecialService
 
 ESTADOS_TERMINALES = ("completada", "cancelada")
+TRANSICIONES_MANUALES = {
+    "pendiente": frozenset({"confirmada", "cancelada"}),
+    "confirmada": frozenset({"cancelada"}),
+    "en_curso": frozenset(),
+    "completada": frozenset(),
+    "cancelada": frozenset(),
+}
 
 
 def _es_violacion_de_traslape(error: IntegrityError) -> bool:
@@ -232,7 +240,34 @@ class ReservacionService:
             monto_pagado=0,
             notas=notas,
         )
-        return self._guardar_o_409(lambda: self.repo.crear(reservacion))
+
+        def operacion():
+            self.db.add(reservacion)
+            self.db.flush()
+            OutboxService.record(
+                self.db,
+                event_key=f"reservation.created:{reservacion.id}",
+                event_type="reservation.created",
+                aggregate_type="reservation",
+                aggregate_id=reservacion.id,
+                payload={
+                    "reservation_id": reservacion.id,
+                    "service_id": reservacion.servicio_id,
+                    "unit_id": reservacion.unidad_hospedaje_id,
+                    "reservation_type": reservacion.tipo_reservacion,
+                    "arrival_date": reservacion.fecha_llegada,
+                    "departure_date": reservacion.fecha_salida,
+                    "people": reservacion.num_personas,
+                    "origin": reservacion.origen,
+                    "total": reservacion.total,
+                    "status": reservacion.estado,
+                },
+            )
+            self.db.commit()
+            self.db.refresh(reservacion)
+            return reservacion
+
+        return self._guardar_o_409(operacion)
 
     def obtener_por_id(self, reservacion_id: int) -> Reservacion:
         reservacion = self.repo.obtener_por_id(reservacion_id)
@@ -254,7 +289,53 @@ class ReservacionService:
             )
         if reservacion.estado == nuevo_estado:
             raise HTTPException(status_code=400, detail=f"La reservación ya está en estado '{nuevo_estado}'.")
-        return self.repo.actualizar_estado(reservacion, nuevo_estado)
+
+        permitidos = TRANSICIONES_MANUALES.get(reservacion.estado, frozenset())
+        if nuevo_estado not in permitidos:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"No se permite cambiar una reservación de '{reservacion.estado}' "
+                    f"a '{nuevo_estado}'."
+                ),
+            )
+
+        def operacion():
+            reservacion.estado = nuevo_estado
+            if nuevo_estado == "confirmada":
+                OutboxService.record(
+                    self.db,
+                    event_key=f"reservation.confirmed:{reservacion.id}",
+                    event_type="reservation.confirmed",
+                    aggregate_type="reservation",
+                    aggregate_id=reservacion.id,
+                    payload={
+                        "reservation_id": reservacion.id,
+                        "status": nuevo_estado,
+                        "total": reservacion.total,
+                        "paid_amount": reservacion.monto_pagado,
+                        "confirmation_source": "manual",
+                    },
+                )
+            elif nuevo_estado == "cancelada":
+                OutboxService.record(
+                    self.db,
+                    event_key=f"reservation.cancelled:{reservacion.id}",
+                    event_type="reservation.cancelled",
+                    aggregate_type="reservation",
+                    aggregate_id=reservacion.id,
+                    payload={
+                        "reservation_id": reservacion.id,
+                        "status": nuevo_estado,
+                        "paid_amount": reservacion.monto_pagado,
+                        "pending_balance": reservacion.saldo_pendiente,
+                    },
+                )
+            self.db.commit()
+            self.db.refresh(reservacion)
+            return reservacion
+
+        return self._guardar_o_409(operacion)
 
     def actualizar(
         self,

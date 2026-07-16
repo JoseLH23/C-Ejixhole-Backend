@@ -19,14 +19,21 @@ def entorno_cookie():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    # El fixture necesita conservar IDs escalares después de cada commit/cierre.
+    # expire_on_commit=False evita que una instancia ya separada intente volver a
+    # consultar la sesión y dispare DetachedInstanceError.
+    Session = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        expire_on_commit=False,
+        bind=engine,
+    )
     Base.metadata.create_all(bind=engine)
 
     session = Session()
     rol = Rol(nombre="admin", descripcion="Administrador")
     session.add(rol)
     session.commit()
-    session.refresh(rol)
     rol_id = rol.id
     session.add(
         Usuario(

@@ -16,6 +16,14 @@ class ServicePrincipal:
     scopes: frozenset[str]
 
 
+def _coincide_clave(proporcionada: str, esperada: str) -> bool:
+    """Compara como bytes para aceptar cualquier Unicode sin lanzar TypeError."""
+    return hmac.compare_digest(
+        proporcionada.encode("utf-8"),
+        esperada.encode("utf-8"),
+    )
+
+
 def require_mh_core_readonly(
     x_mh_service_key: str | None = Header(default=None, alias="X-MH-Service-Key"),
 ) -> ServicePrincipal:
@@ -37,7 +45,7 @@ def require_mh_core_readonly(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="La credencial de integración con MH-Core no cumple la longitud mínima.",
         )
-    if not x_mh_service_key or not hmac.compare_digest(x_mh_service_key, clave_real):
+    if not x_mh_service_key or not _coincide_clave(x_mh_service_key, clave_real):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credencial de servicio inválida o faltante.",
