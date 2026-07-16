@@ -1,0 +1,60 @@
+name: Publicar outbox sin worker pagado
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7,37 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ejixhole-outbox
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BACKEND_URL: ${{ secrets.EJIXHOLE_BACKEND_URL }}
+      DISPATCH_KEY: ${{ secrets.OUTBOX_DISPATCH_KEY }}
+    steps:
+      - name: Confirmar configuración
+        id: config
+        shell: bash
+        run: |
+          if [[ -z "$BACKEND_URL" || -z "$DISPATCH_KEY" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "El disparador queda inactivo hasta configurar EJIXHOLE_BACKEND_URL y OUTBOX_DISPATCH_KEY."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Despertar backend y publicar un lote
+        if: steps.config.outputs.configured == 'true'
+        shell: bash
+        run: |
+          endpoint="${BACKEND_URL%/}/api/v1/integrations/mh-core/outbox/publish"
+          response_file="$(mktemp)"
+          http_status=$(curl --silent --show-error --location \
+            --retry 1 --retry-all-errors --retry-delay 15 \
+            --connect-timeout 45 --max-time 900 \
+            --output "$response_file" --write-out "%{http_code}" \
+            --request POST \
+            --header "Accept: application/json" \
+            --header "X-Outbox-Dispatch-Key: $DISPATCH_KEY" \
+            "$endpoint")
+
+          if [[ "$http_status" != "200" ]]; then
+            echo "El backend respondió HTTP $http_status."
+            cat "$response_file"
+            exit 1
+          fi
+
+          jq -e '
+            has("claimed") and has("published") and has("retried") and
+            has("dead_letter") and has("skipped")
+          ' "$response_file" >/dev/null
+          echo "Lote procesado correctamente:"
+          jq '{claimed, published, retried, dead_letter, skipped}' "$response_file"
