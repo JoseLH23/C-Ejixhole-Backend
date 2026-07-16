@@ -1,8 +1,4 @@
-"""
-Service de Reservaciones. Reglas de negocio; el acceso a datos se
-delega a ReservacionRepository (y a los repos/queries de Cliente y
-Servicio para validar que existen).
-"""
+"""Reglas de negocio y cálculo único de reservaciones."""
 from datetime import date
 from decimal import Decimal
 
@@ -15,6 +11,7 @@ from app.models.reservacion import ESTADOS_RESERVACION, Reservacion
 from app.models.servicio import Servicio
 from app.models.unidad_hospedaje import UnidadHospedaje
 from app.repositories.reservacion_repository import ReservacionRepository
+from app.services.tarifa_especial_service import TarifaEspecialService
 
 ESTADOS_TERMINALES = ("completada", "cancelada")
 
@@ -22,31 +19,14 @@ ESTADOS_TERMINALES = ("completada", "cancelada")
 def _es_violacion_de_traslape(error: IntegrityError) -> bool:
     return "ck_no_traslape_unidad_hospedaje" in str(error.orig)
 
-# Nota (decisión de negocio, ver docs/portal-publico-fase-1.md): el
-# costo es el mismo para adultos y niños — "num_personas" es un
-# conteo simple, sin niveles de precio por edad.
-#
-# Los precios de entrada y camping YA NO están fijos aquí — salen del
-# catálogo real (Servicio.precio), para que puedan editarse desde el
-# módulo Servicios sin tocar código si algún día suben de precio. Ver
-# _obtener_servicio_entrada().
-
 
 class ReservacionService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = ReservacionRepository(db)
+        self.tarifa_service = TarifaEspecialService(db)
 
     def _guardar_o_409(self, operacion):
-        """
-        CR-02 (auditoría de seguridad 13/jul/2026): traduce la
-        violación REAL del constraint EXCLUDE de PostgreSQL
-        (ck_no_traslape_unidad_hospedaje — ver migración
-        0005_no_traslape_hospedaje) a un 409 claro para el
-        cliente, en vez de un 500 genérico. La protección real contra
-        la doble reservación la da la base de datos, no esto — esto
-        solo traduce el error a algo que la UI puede mostrar bien.
-        """
         try:
             return operacion()
         except IntegrityError as error:
@@ -59,17 +39,6 @@ class ReservacionService:
             raise
 
     def _obtener_precio_entrada(self) -> Decimal:
-        """
-        Precio real de "Acceso al parque" (categoria="entrada",
-        reservable=True), tomado del catálogo — editable desde el
-        módulo Servicios sin tocar código. Camping y hospedaje también
-        lo necesitan porque la entrada siempre se incluye en su costo.
-
-        Si no existe o está desactivado, es un error de configuración
-        real del catálogo, no un problema del cliente que reserva —
-        se reporta como 500 con un mensaje claro para que se arregle
-        desde Servicios, en vez de cobrar un precio adivinado.
-        """
         servicio_entrada = (
             self.db.query(Servicio)
             .filter(Servicio.categoria == "entrada", Servicio.reservable.is_(True))
@@ -85,6 +54,28 @@ class ReservacionService:
             )
         return servicio_entrada.precio
 
+    def _aplicar_tarifas_especiales(
+        self,
+        *,
+        tipo_reservacion: str,
+        fecha_llegada: date,
+        fecha_salida: date,
+        unidad_hospedaje_id: int | None,
+        total_base: Decimal,
+        desglose: list[dict],
+    ) -> tuple[Decimal, list[dict]]:
+        dias = 1 if tipo_reservacion == "entrada" else (fecha_salida - fecha_llegada).days
+        if dias <= 0:
+            return total_base, desglose
+        ajuste, lineas = self.tarifa_service.calcular_ajustes(
+            tipo=tipo_reservacion,
+            fecha_llegada=fecha_llegada,
+            fecha_salida=fecha_salida,
+            unidad_hospedaje_id=unidad_hospedaje_id,
+            base_diaria=total_base / Decimal(dias),
+        )
+        return total_base + ajuste, [*desglose, *lineas]
+
     def _validar_y_calcular(
         self,
         servicio_id: int,
@@ -95,25 +86,11 @@ class ReservacionService:
         num_personas: int,
         excluir_reservacion_id: int | None = None,
     ) -> tuple[Servicio, "UnidadHospedaje | None", int, Decimal, list[dict]]:
-        """
-        Valida todo lo que no depende del cliente (servicio existe y
-        activo, capacidad, unidad de hospedaje disponible) y calcula
-        el total real — junto con el DESGLOSE por concepto, para que
-        el visitante siempre sepa exactamente qué se le está
-        cobrando, no solo el número final. Compartido por crear(),
-        cotizar() y actualizar() — el precio que se cotiza es
-        EXACTAMENTE el mismo que se cobra al crear o editar, nunca
-        fórmulas separadas que puedan desincronizarse.
-
-        `excluir_reservacion_id`: solo lo usa actualizar() — ver nota
-        en ReservacionRepository.existe_traslape_unidad_hospedaje().
-        """
         servicio = self.db.query(Servicio).filter(Servicio.id == servicio_id).first()
         if not servicio:
             raise HTTPException(status_code=404, detail="Servicio no encontrado.")
         if not servicio.activo:
             raise HTTPException(status_code=400, detail="Este servicio ya no está disponible.")
-
         if servicio.capacidad_maxima and num_personas > servicio.capacidad_maxima:
             raise HTTPException(
                 status_code=400,
@@ -121,27 +98,20 @@ class ReservacionService:
             )
 
         noches = (fecha_salida - fecha_llegada).days
-
         unidad = None
         if tipo_reservacion == "hospedaje":
-            unidad = (
-                self.db.query(UnidadHospedaje)
-                .filter(UnidadHospedaje.id == unidad_hospedaje_id)
-                .first()
-            )
+            unidad = self.db.query(UnidadHospedaje).filter(UnidadHospedaje.id == unidad_hospedaje_id).first()
             if not unidad:
                 raise HTTPException(status_code=404, detail="Unidad de hospedaje no encontrada.")
             if not unidad.activa:
-                raise HTTPException(
-                    status_code=400, detail="Esta unidad de hospedaje ya no está disponible."
-                )
+                raise HTTPException(status_code=400, detail="Esta unidad de hospedaje ya no está disponible.")
             if num_personas > unidad.capacidad_maxima:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"{unidad.nombre} admite máximo {unidad.capacidad_maxima} personas.",
-                )
+                raise HTTPException(status_code=400, detail=f"{unidad.nombre} admite máximo {unidad.capacidad_maxima} personas.")
             if self.repo.existe_traslape_unidad_hospedaje(
-                unidad.id, fecha_llegada, fecha_salida, excluir_reservacion_id=excluir_reservacion_id
+                unidad.id,
+                fecha_llegada,
+                fecha_salida,
+                excluir_reservacion_id=excluir_reservacion_id,
             ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -150,54 +120,55 @@ class ReservacionService:
 
         precio_entrada = self._obtener_precio_entrada()
         desglose: list[dict] = []
-
         if tipo_reservacion == "entrada":
             subtotal_entrada = precio_entrada * num_personas
-            desglose.append(
-                {
-                    "concepto": "Entrada al parque",
-                    "detalle": f"${precio_entrada} x {num_personas} persona(s)",
-                    "subtotal": subtotal_entrada,
-                }
-            )
+            desglose.append({
+                "concepto": "Entrada al parque",
+                "detalle": f"${precio_entrada} x {num_personas} persona(s)",
+                "subtotal": subtotal_entrada,
+            })
             total = subtotal_entrada
         elif tipo_reservacion == "camping":
             subtotal_entrada = precio_entrada * num_personas * noches
             subtotal_camping = servicio.precio * num_personas * noches
-            desglose.append(
+            desglose.extend([
                 {
                     "concepto": "Entrada al parque",
                     "detalle": f"${precio_entrada} x {num_personas} persona(s) x {noches} noche(s)",
                     "subtotal": subtotal_entrada,
-                }
-            )
-            desglose.append(
+                },
                 {
                     "concepto": "Camping",
                     "detalle": f"${servicio.precio} x {num_personas} persona(s) x {noches} noche(s)",
                     "subtotal": subtotal_camping,
-                }
-            )
+                },
+            ])
             total = subtotal_entrada + subtotal_camping
-        else:  # hospedaje
+        else:
             subtotal_entrada = precio_entrada * num_personas * noches
             subtotal_hospedaje = unidad.precio_por_noche * noches
-            desglose.append(
+            desglose.extend([
                 {
                     "concepto": "Entrada al parque",
                     "detalle": f"${precio_entrada} x {num_personas} persona(s) x {noches} noche(s)",
                     "subtotal": subtotal_entrada,
-                }
-            )
-            desglose.append(
+                },
                 {
                     "concepto": unidad.nombre,
                     "detalle": f"${unidad.precio_por_noche} x {noches} noche(s)",
                     "subtotal": subtotal_hospedaje,
-                }
-            )
+                },
+            ])
             total = subtotal_entrada + subtotal_hospedaje
 
+        total, desglose = self._aplicar_tarifas_especiales(
+            tipo_reservacion=tipo_reservacion,
+            fecha_llegada=fecha_llegada,
+            fecha_salida=fecha_salida,
+            unidad_hospedaje_id=unidad_hospedaje_id,
+            total_base=total,
+            desglose=desglose,
+        )
         return servicio, unidad, noches, total, desglose
 
     def cotizar(
@@ -209,16 +180,13 @@ class ReservacionService:
         unidad_hospedaje_id: int | None,
         num_personas: int,
     ) -> tuple[int, Decimal, list[dict]]:
-        """
-        Calcula el total SIN crear nada — para que el sitio público
-        pueda mostrar el precio real (con desglose) antes de que la
-        persona envíe su solicitud. Hace las mismas validaciones que
-        crear() (servicio activo, capacidad, disponibilidad de la
-        unidad) para no cotizar algo que luego sería rechazado al
-        confirmar.
-        """
         _, _, noches, total, desglose = self._validar_y_calcular(
-            servicio_id, tipo_reservacion, fecha_llegada, fecha_salida, unidad_hospedaje_id, num_personas
+            servicio_id,
+            tipo_reservacion,
+            fecha_llegada,
+            fecha_salida,
+            unidad_hospedaje_id,
+            num_personas,
         )
         return noches, total, desglose
 
@@ -239,15 +207,16 @@ class ReservacionService:
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente no encontrado.")
         if not cliente.activo:
-            raise HTTPException(
-                status_code=400, detail="No se puede reservar para un cliente desactivado."
-            )
+            raise HTTPException(status_code=400, detail="No se puede reservar para un cliente desactivado.")
 
-        unidad, total = None, None
         _, unidad, _, total, _ = self._validar_y_calcular(
-            servicio_id, tipo_reservacion, fecha_llegada, fecha_salida, unidad_hospedaje_id, num_personas
+            servicio_id,
+            tipo_reservacion,
+            fecha_llegada,
+            fecha_salida,
+            unidad_hospedaje_id,
+            num_personas,
         )
-
         reservacion = Reservacion(
             cliente_id=cliente_id,
             servicio_id=servicio_id,
@@ -256,8 +225,6 @@ class ReservacionService:
             tipo_reservacion=tipo_reservacion,
             fecha_llegada=fecha_llegada,
             fecha_salida=fecha_salida,
-            # Se mantiene igual a fecha_llegada por compatibilidad con
-            # Reportes/Dashboard existentes — ver nota en el modelo.
             fecha_visita=fecha_llegada,
             num_personas=num_personas,
             origen=origen,
@@ -265,7 +232,6 @@ class ReservacionService:
             monto_pagado=0,
             notas=notas,
         )
-
         return self._guardar_o_409(lambda: self.repo.crear(reservacion))
 
     def obtener_por_id(self, reservacion_id: int) -> Reservacion:
@@ -280,23 +246,14 @@ class ReservacionService:
     def cambiar_estado(self, reservacion_id: int, nuevo_estado: str) -> Reservacion:
         if nuevo_estado not in ESTADOS_RESERVACION:
             raise HTTPException(status_code=400, detail=f"Estado inválido: {nuevo_estado}")
-
         reservacion = self.obtener_por_id(reservacion_id)
-
         if reservacion.estado in ESTADOS_TERMINALES:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Esta reservación ya está en estado terminal "
-                    f"'{reservacion.estado}' y no puede cambiar de estado."
-                ),
+                detail=f"Esta reservación ya está en estado terminal '{reservacion.estado}' y no puede cambiar de estado.",
             )
-
         if reservacion.estado == nuevo_estado:
-            raise HTTPException(
-                status_code=400, detail=f"La reservación ya está en estado '{nuevo_estado}'."
-            )
-
+            raise HTTPException(status_code=400, detail=f"La reservación ya está en estado '{nuevo_estado}'.")
         return self.repo.actualizar_estado(reservacion, nuevo_estado)
 
     def actualizar(
@@ -309,52 +266,27 @@ class ReservacionService:
         unidad_hospedaje_id: int | None = None,
         notas: str | None = None,
     ) -> Reservacion:
-        """
-        Edita fechas, personas, servicio y/o notas de una reservación
-        existente. NO permite cambiar tipo_reservacion (entrada <->
-        camping <-> hospedaje es, en la práctica, una reservación
-        distinta — cambiar eso aquí complicaría la validación de
-        fechas sin un beneficio real; se cancela y se crea una nueva).
-
-        Reutiliza exactamente _validar_y_calcular() — las mismas
-        reglas de capacidad, disponibilidad de unidad y cálculo de
-        precio que crear()/cotizar(), nunca una versión aparte.
-        """
         reservacion = self.obtener_por_id(reservacion_id)
-
         if reservacion.estado in ESTADOS_TERMINALES:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Esta reservación ya está en estado terminal "
-                    f"'{reservacion.estado}' y no se puede editar."
-                ),
+                detail=f"Esta reservación ya está en estado terminal '{reservacion.estado}' y no se puede editar.",
             )
 
-        # Solo lo que se envía reemplaza el valor actual — el resto se
-        # conserva tal cual (mismo criterio que ClienteUpdate/ServicioUpdate).
         nuevo_servicio_id = servicio_id if servicio_id is not None else reservacion.servicio_id
         nueva_fecha_llegada = fecha_llegada if fecha_llegada is not None else reservacion.fecha_llegada
         nueva_fecha_salida = fecha_salida if fecha_salida is not None else reservacion.fecha_salida
         nuevo_num_personas = num_personas if num_personas is not None else reservacion.num_personas
-        nueva_unidad_id = (
-            unidad_hospedaje_id if unidad_hospedaje_id is not None else reservacion.unidad_hospedaje_id
-        )
+        nueva_unidad_id = unidad_hospedaje_id if unidad_hospedaje_id is not None else reservacion.unidad_hospedaje_id
 
-        # Mismas reglas de fechas que ReservacionCreate (schemas/reservacion.py,
-        # validador `fechas_y_unidad_consistentes`) — el tipo_reservacion no
-        # cambia aquí, así que se revalida contra el tipo YA guardado.
         if nueva_fecha_salida < nueva_fecha_llegada:
             raise HTTPException(400, "fecha_salida no puede ser anterior a fecha_llegada")
         if reservacion.tipo_reservacion == "entrada" and nueva_fecha_salida != nueva_fecha_llegada:
-            raise HTTPException(
-                400, "Para 'entrada' (visita de un día), fecha_llegada y fecha_salida deben ser el mismo día"
-            )
+            raise HTTPException(400, "Para 'entrada' (visita de un día), fecha_llegada y fecha_salida deben ser el mismo día")
         if reservacion.tipo_reservacion in ("camping", "hospedaje") and nueva_fecha_salida == nueva_fecha_llegada:
             raise HTTPException(
                 400,
-                f"Para '{reservacion.tipo_reservacion}' se necesita al menos 1 noche "
-                "(fecha_salida posterior a fecha_llegada)",
+                f"Para '{reservacion.tipo_reservacion}' se necesita al menos 1 noche (fecha_salida posterior a fecha_llegada)",
             )
 
         _, unidad, _, nuevo_total, _ = self._validar_y_calcular(
@@ -366,11 +298,6 @@ class ReservacionService:
             nuevo_num_personas,
             excluir_reservacion_id=reservacion_id,
         )
-
-        # Protección real: si ya se le cobró algo, el nuevo total nunca
-        # puede quedar por debajo de lo ya pagado (dejaría un
-        # saldo_pendiente negativo, un estado que no tiene sentido de
-        # negocio — ver Reservacion.saldo_pendiente en el modelo).
         if nuevo_total < reservacion.monto_pagado:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -391,5 +318,4 @@ class ReservacionService:
         }
         if notas is not None:
             cambios["notas"] = notas
-
         return self._guardar_o_409(lambda: self.repo.actualizar(reservacion, cambios))
