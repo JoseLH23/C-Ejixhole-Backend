@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.outbox_event import OUTBOX_STATUSES, OutboxEvent
 from app.schemas.outbox_status import OutboxChannelStatusOut, OutboxEventStatusOut
+from app.services.outbox_publisher_service import OutboxPublisherConfig, OutboxPublisherConfigurationError
 
 
 class OutboxStatusService:
@@ -36,6 +37,25 @@ class OutboxStatusService:
             last_http_status=event.last_http_status,
         )
 
+    @staticmethod
+    def _url_is_valid(events_url: str) -> bool:
+        try:
+            OutboxPublisherConfig(events_url=events_url, signing_secret="x" * 48).validate()
+        except OutboxPublisherConfigurationError:
+            return False
+        return True
+
+    @staticmethod
+    def _configuration_is_valid(events_url: str, signing_secret: str) -> bool:
+        try:
+            OutboxPublisherConfig(
+                events_url=events_url,
+                signing_secret=signing_secret,
+            ).validate()
+        except OutboxPublisherConfigurationError:
+            return False
+        return True
+
     def status(self) -> OutboxChannelStatusOut:
         rows = (
             self.db.query(OutboxEvent.status, func.count(OutboxEvent.id))
@@ -60,8 +80,8 @@ class OutboxStatusService:
         events_url = os.getenv("MH_CORE_EVENTS_URL", "").strip()
         signing_secret = os.getenv("MH_CORE_EVENT_SIGNING_SECRET", "").strip()
         return OutboxChannelStatusOut(
-            configured=events_url.startswith("https://") and len(signing_secret) >= 32,
-            events_url_configured=events_url.startswith("https://"),
+            configured=self._configuration_is_valid(events_url, signing_secret),
+            events_url_configured=self._url_is_valid(events_url),
             signing_secret_configured=len(signing_secret) >= 32,
             total_events=sum(counts.values()),
             by_status=counts,
