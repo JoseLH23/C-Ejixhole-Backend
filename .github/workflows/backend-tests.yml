@@ -100,3 +100,97 @@ jobs:
 
       - name: Verificar que modelos y migraciones estan sincronizados
         run: alembic check
+
+  postgres-backup-restore:
+    name: Probar respaldo y restauracion PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: ejixhole_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ejixhole_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/ejixhole_ci
+      JWT_SECRET_KEY: clave-ci-segura-nunca-usar-en-produccion-1234567890
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Aplicar migraciones
+        run: alembic upgrade head
+
+      - name: Localizar contenedor PostgreSQL
+        run: |
+          POSTGRES_CONTAINER="$(docker ps --filter "ancestor=postgres:17" --format '{{.ID}}' | head -n 1)"
+          test -n "$POSTGRES_CONTAINER"
+          echo "POSTGRES_CONTAINER=$POSTGRES_CONTAINER" >> "$GITHUB_ENV"
+
+      - name: Crear dato de verificacion
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql \
+            -U postgres \
+            -d ejixhole_ci \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE TABLE backup_restore_probe (id integer PRIMARY KEY, payload text NOT NULL); INSERT INTO backup_restore_probe (id, payload) VALUES (1, 'backup-ok');"
+
+      - name: Crear respaldo
+        run: |
+          docker exec "$POSTGRES_CONTAINER" pg_dump \
+            -U postgres \
+            -d ejixhole_ci \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --file=/tmp/ejixhole.dump
+          docker exec "$POSTGRES_CONTAINER" test -s /tmp/ejixhole.dump
+          docker cp "$POSTGRES_CONTAINER:/tmp/ejixhole.dump" "$RUNNER_TEMP/ejixhole.dump"
+          test -s "$RUNNER_TEMP/ejixhole.dump"
+          sha256sum "$RUNNER_TEMP/ejixhole.dump" > "$RUNNER_TEMP/ejixhole.dump.sha256"
+
+      - name: Restaurar en base temporal
+        run: |
+          docker exec "$POSTGRES_CONTAINER" createdb \
+            -U postgres \
+            --template=template0 \
+            ejixhole_restore
+          docker exec "$POSTGRES_CONTAINER" pg_restore \
+            -U postgres \
+            -d ejixhole_restore \
+            --clean \
+            --if-exists \
+            --no-owner \
+            --no-privileges \
+            --exit-on-error \
+            /tmp/ejixhole.dump
+
+      - name: Verificar restauracion
+        run: |
+          PROBE="$(docker exec "$POSTGRES_CONTAINER" psql -U postgres -d ejixhole_restore -Atc "SELECT payload FROM backup_restore_probe WHERE id = 1;")"
+          REVISION="$(docker exec "$POSTGRES_CONTAINER" psql -U postgres -d ejixhole_restore -Atc "SELECT version_num FROM alembic_version LIMIT 1;")"
+          test "$PROBE" = "backup-ok"
+          test -n "$REVISION"
+          echo "Restauracion verificada en revision Alembic: $REVISION"

@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 .env
 .pytest_cache/
+
+# Respaldos PostgreSQL: contienen datos sensibles y nunca se versionan.
+backups/
+*.dump
+*.backup
+*.sql.gz
