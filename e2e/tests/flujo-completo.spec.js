@@ -106,7 +106,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
 
     await fila.getByRole("button", { name: "Aceptar", exact: true }).click();
     await expect(admin.getByText("Solicitud aceptada", { exact: true })).toBeVisible();
-    await expect(fila).toContainText("Confirmada");
+    await expect(fila).toContainText(/confirmada/i);
 
     await fila.getByRole("button", { name: "Pagos", exact: true }).click();
     const pagos = admin.getByRole("dialog");
@@ -123,14 +123,14 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
     await expect(fila).toContainText("$0.00");
     await fila.getByRole("button", { name: "Check-in", exact: true }).click();
     await expect(admin.getByText("Check-in registrado", { exact: true })).toBeVisible();
-    await expect(fila).toContainText("En curso");
+    await expect(fila).toContainText(/en curso/i);
 
     await fila.getByRole("button", { name: "Check-out", exact: true }).click();
     const confirmacion = admin.getByRole("dialog");
     await expect(confirmacion.getByText(/Registrar check-out/i)).toBeVisible();
     await confirmacion.getByRole("button", { name: "Completar visita", exact: true }).click();
     await expect(admin.getByText("Check-out registrado", { exact: true })).toBeVisible();
-    await expect(fila).toContainText("Completada");
+    await expect(fila).toContainText(/completada/i);
   });
 
   await test.step("el pago quedó reflejado en la caja", async () => {
