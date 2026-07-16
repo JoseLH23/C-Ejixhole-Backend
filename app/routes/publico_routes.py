@@ -12,6 +12,7 @@ from app.schemas.publico import (
     CotizacionOut,
     DisponibilidadOut,
     FechaBloqueadaPublicaOut,
+    PeriodoNoDisponibleOut,
     ReservacionPublicaCreate,
     ReservacionPublicaOut,
     ServicioPublicoOut,
@@ -21,6 +22,13 @@ from app.services.bloqueo_operativo_service import BloqueoOperativoService
 from app.services.publico_service import PublicoService
 
 router = APIRouter(prefix="/publico", tags=["Portal público"], dependencies=[Depends(limitar_publico)])
+
+
+def _validar_rango(desde: date, hasta: date) -> None:
+    if hasta < desde:
+        raise HTTPException(status_code=400, detail="hasta no puede ser anterior a desde")
+    if (hasta - desde).days > 366:
+        raise HTTPException(status_code=400, detail="El rango máximo permitido es de 366 días")
 
 
 @router.get("/servicios", response_model=list[ServicioPublicoOut])
@@ -34,18 +42,21 @@ def listar_unidades_hospedaje(db: Session = Depends(get_db)):
 
 
 @router.get("/fechas-bloqueadas", response_model=list[FechaBloqueadaPublicaOut])
-def listar_fechas_bloqueadas(
+def listar_fechas_bloqueadas(desde: date = Query(...), hasta: date = Query(...), db: Session = Depends(get_db)):
+    _validar_rango(desde, hasta)
+    return BloqueoOperativoService(db).listar_bloqueos(desde, hasta)
+
+
+@router.get("/disponibilidad-calendario", response_model=list[PeriodoNoDisponibleOut])
+def listar_disponibilidad_calendario(
+    unidad_hospedaje_id: int = Query(..., gt=0),
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Publica solo cierres globales; los cierres de una unidad no se
-    presentan como cierre completo del parque."""
-    if hasta < desde:
-        raise HTTPException(status_code=400, detail="hasta no puede ser anterior a desde")
-    if (hasta - desde).days > 366:
-        raise HTTPException(status_code=400, detail="El rango máximo permitido es de 366 días")
-    return BloqueoOperativoService(db).listar_bloqueos(desde, hasta)
+    """Devuelve solo rangos ocupados/cerrados; nunca datos personales."""
+    _validar_rango(desde, hasta)
+    return PublicoService(db).listar_periodos_no_disponibles(unidad_hospedaje_id, desde, hasta)
 
 
 @router.get("/disponibilidad", response_model=DisponibilidadOut)
@@ -55,19 +66,9 @@ def verificar_disponibilidad(
     fecha_salida: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    if not BloqueoOperativoService(db).hay_disponibilidad(
-        fecha_llegada,
-        fecha_salida,
-        "hospedaje",
-        unidad_hospedaje_id,
-    ):
+    if not BloqueoOperativoService(db).hay_disponibilidad(fecha_llegada, fecha_salida, "hospedaje", unidad_hospedaje_id):
         return {"disponible": False}
-    disponible = PublicoService(db).hay_disponibilidad(
-        unidad_hospedaje_id,
-        fecha_llegada,
-        fecha_salida,
-    )
-    return {"disponible": disponible}
+    return {"disponible": PublicoService(db).hay_disponibilidad(unidad_hospedaje_id, fecha_llegada, fecha_salida)}
 
 
 @router.get("/cotizar", response_model=CotizacionOut)
@@ -79,12 +80,7 @@ def cotizar_reservacion(
     unidad_hospedaje_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    BloqueoOperativoService(db).validar_disponibilidad(
-        fecha_llegada,
-        fecha_salida,
-        tipo_reservacion,
-        unidad_hospedaje_id,
-    )
+    BloqueoOperativoService(db).validar_disponibilidad(fecha_llegada, fecha_salida, tipo_reservacion, unidad_hospedaje_id)
     noches, total, desglose = PublicoService(db).cotizar(
         tipo_reservacion=tipo_reservacion,
         fecha_llegada=fecha_llegada,
@@ -96,16 +92,9 @@ def cotizar_reservacion(
 
 
 @router.post("/reservaciones", response_model=ReservacionPublicaOut, status_code=201)
-def crear_solicitud_reservacion(
-    data: ReservacionPublicaCreate,
-    request: Request,
-    db: Session = Depends(get_db),
-):
+def crear_solicitud_reservacion(data: ReservacionPublicaCreate, request: Request, db: Session = Depends(get_db)):
     BloqueoOperativoService(db).validar_disponibilidad(
-        data.fecha_llegada,
-        data.fecha_salida,
-        data.tipo_reservacion,
-        data.unidad_hospedaje_id,
+        data.fecha_llegada, data.fecha_salida, data.tipo_reservacion, data.unidad_hospedaje_id
     )
     servicio = PublicoService(db)
     return ejecutar_con_idempotencia(
