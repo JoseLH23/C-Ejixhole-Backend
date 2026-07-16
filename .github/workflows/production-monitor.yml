@@ -1,0 +1,109 @@
+name: Monitoreo de producción
+
+on:
+  schedule:
+    # Dos veces por hora, evitando el minuto 0 donde GitHub suele tener más carga.
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-monitor
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    name: Comprobar servicios públicos
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v7
+
+      - name: Ejecutar comprobaciones
+        id: monitor
+        continue-on-error: true
+        env:
+          BACKEND_HEALTH_URL: ${{ vars.BACKEND_HEALTH_URL || 'https://c-ejixhole-backend.onrender.com/health/ready' }}
+          PORTAL_URL: ${{ vars.PORTAL_URL || 'https://ejixhole-reservas.vercel.app/' }}
+          ADMIN_URL: ${{ vars.ADMIN_URL || 'https://ejixhole-frontend.vercel.app/' }}
+          MONITOR_ATTEMPTS: "4"
+          MONITOR_TIMEOUT_SECONDS: "45"
+          MONITOR_RETRY_DELAY_SECONDS: "15"
+        run: python scripts/check_production_health.py
+
+      - name: Abrir o actualizar alerta
+        if: steps.monitor.outcome == 'failure'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const title = '[ALERTA] Servicios de EjiXhole no disponibles';
+            const report = fs.existsSync('monitor-report.md')
+              ? fs.readFileSync('monitor-report.md', 'utf8')
+              : 'El monitor terminó sin generar un reporte.';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `${report}\n\nEjecución: ${runUrl}\nDetectado: ${new Date().toISOString()}`;
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find(issue => issue.title === title && !issue.pull_request);
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+
+      - name: Cerrar alerta al recuperarse
+        if: steps.monitor.outcome == 'success'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = '[ALERTA] Servicios de EjiXhole no disponibles';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find(issue => issue.title === title && !issue.pull_request);
+
+            if (existing) {
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `✅ Los servicios volvieron a responder correctamente.\n\nEjecución: ${runUrl}`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+            }
+
+      - name: Marcar la ejecución como fallida
+        if: steps.monitor.outcome == 'failure'
+        run: exit 1
