@@ -2,7 +2,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, evento_calendario_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, tarifa_especial_routes, usuario_routes
+from app.routes import (
+    auth_routes,
+    caja_routes,
+    cliente_routes,
+    dashboard_routes,
+    evento_calendario_routes,
+    health_routes,
+    pago_routes,
+    publico_routes,
+    reporte_routes,
+    reservacion_routes,
+    servicio_routes,
+    tarifa_especial_routes,
+    usuario_routes,
+)
 
 _docs_habilitados = settings.ENVIRONMENT != "production"
 
@@ -30,6 +44,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
 
+app.include_router(health_routes.router)
 app.include_router(cliente_routes.router)
 app.include_router(reservacion_routes.router)
 app.include_router(pago_routes.router)
