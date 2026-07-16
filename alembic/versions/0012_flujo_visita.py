@@ -33,6 +33,13 @@ def _crear_exclusion(estados: str) -> None:
     )
 
 
+def _eliminar_exclusion() -> None:
+    op.execute(
+        "ALTER TABLE reservaciones "
+        "DROP CONSTRAINT IF EXISTS ck_no_traslape_unidad_hospedaje;"
+    )
+
+
 def upgrade() -> None:
     op.add_column(
         "reservaciones", sa.Column("fecha_checkin", sa.DateTime(timezone=True), nullable=True)
@@ -63,9 +70,6 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
 
-    # Las filas completadas antes de esta migración conservan una marca
-    # aproximada basada en su última actualización para que no aparezcan sin
-    # cierre en reportes futuros.
     op.execute(
         """
         UPDATE reservaciones
@@ -77,7 +81,7 @@ def upgrade() -> None:
         """
     )
 
-    op.drop_constraint("ck_no_traslape_unidad_hospedaje", "reservaciones", type_="exclude")
+    _eliminar_exclusion()
     op.drop_constraint("ck_reservaciones_estado_valido", "reservaciones", type_="check")
     op.create_check_constraint(
         "ck_reservaciones_estado_valido",
@@ -88,11 +92,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Un estado inexistente en el esquema anterior debe volver al último estado
-    # compatible antes de restaurar el CHECK viejo.
     op.execute("UPDATE reservaciones SET estado = 'confirmada' WHERE estado = 'en_curso';")
 
-    op.drop_constraint("ck_no_traslape_unidad_hospedaje", "reservaciones", type_="exclude")
+    _eliminar_exclusion()
     op.drop_constraint("ck_reservaciones_estado_valido", "reservaciones", type_="check")
     op.create_check_constraint(
         "ck_reservaciones_estado_valido",
