@@ -5,6 +5,7 @@ import json
 import uuid
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -129,6 +130,27 @@ def test_ciclo_operativo_guarda_eventos_pendientes_sin_datos_personales(db_conte
         "terminal-e2e",
     ):
         assert dato_privado not in serializado
+
+
+def test_confirmacion_no_puede_revertirse_y_duplicar_evento(db_context):
+    db, _, usuario, cliente, servicio = db_context
+    reservacion = _crear_reservacion(db, cliente, servicio, usuario, dia=23)
+    service = ReservacionService(db)
+
+    service.cambiar_estado(reservacion.id, "confirmada")
+
+    with pytest.raises(HTTPException) as error:
+        service.cambiar_estado(reservacion.id, "pendiente")
+
+    assert error.value.status_code == 409
+    db.refresh(reservacion)
+    assert reservacion.estado == "confirmada"
+    assert (
+        db.query(OutboxEvent)
+        .filter(OutboxEvent.event_key == f"reservation.confirmed:{reservacion.id}")
+        .count()
+        == 1
+    )
 
 
 def test_reservacion_y_evento_se_revierten_juntos_si_falla_outbox(db_context, monkeypatch):
