@@ -76,12 +76,21 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
   const folio = coincidenciaFolio[1];
 
   const admin = await contexto.newPage();
-  await test.step("el administrador inicia sesión y abre caja", async () => {
+  await test.step("el administrador inicia sesión segura y abre caja", async () => {
     await admin.goto(`${ADMIN_URL}/login`);
     await admin.getByLabel("Email").fill(ADMIN_EMAIL);
     await admin.getByLabel("Contraseña").fill(ADMIN_PASSWORD);
     await admin.getByRole("button", { name: /Iniciar sesión/i }).click();
     await expect(admin).toHaveURL(new RegExp(`${escaparRegex(ADMIN_URL)}/?$`));
+
+    expect(await admin.evaluate(() => localStorage.getItem("ejixhole_token"))).toBeNull();
+    const cookies = await contexto.cookies(ADMIN_URL);
+    const cookieSesion = cookies.find((cookie) => cookie.name === "ejixhole_session");
+    const cookieCsrf = cookies.find((cookie) => cookie.name === "ejixhole_csrf");
+    expect(cookieSesion, "La sesión debe existir como cookie").toBeTruthy();
+    expect(cookieSesion?.httpOnly).toBe(true);
+    expect(cookieCsrf, "La protección CSRF debe existir").toBeTruthy();
+    expect(cookieCsrf?.httpOnly).toBe(false);
 
     await admin.goto(`${ADMIN_URL}/caja`);
     await expect(admin.getByRole("heading", { name: "Caja", exact: true })).toBeVisible();
