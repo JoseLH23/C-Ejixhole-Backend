@@ -41,7 +41,10 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Ejecutar pruebas
-        run: pytest -q
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tail -n 140
 
   postgres-migrations:
     name: Validar migraciones PostgreSQL
