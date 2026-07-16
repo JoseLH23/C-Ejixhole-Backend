@@ -26,10 +26,16 @@ class OutboxEvent(Base):
     event_type = Column(String(80), nullable=False, index=True)
     aggregate_type = Column(String(50), nullable=False)
     aggregate_id = Column(String(64), nullable=False, index=True)
-    schema_version = Column(Integer, nullable=False, default=1)
+    schema_version = Column(Integer, nullable=False, default=1, server_default="1")
     payload = Column(JSON, nullable=False)
-    status = Column(String(20), nullable=False, default="pending", index=True)
-    attempts = Column(Integer, nullable=False, default=0)
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+        index=True,
+    )
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
     available_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     occurred_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     published_at = Column(DateTime(timezone=True), nullable=True)
