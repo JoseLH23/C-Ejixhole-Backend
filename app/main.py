@@ -38,6 +38,12 @@ app.add_middleware(
         "Idempotency-Key",
         "X-CSRF-Token",
     ],
+    expose_headers=[
+        "X-API-Version",
+        "Deprecation",
+        "Link",
+        "X-Request-ID",
+    ],
 )
 
 # Infraestructura: no forma parte del contrato versionado de negocio.
