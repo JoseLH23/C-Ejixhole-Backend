@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.cliente import Cliente
+from app.models.reservacion import ESTADOS_ACTIVOS
 from app.repositories.cliente_repository import ClienteRepository
 
 
@@ -21,12 +22,6 @@ class ClienteService:
         email: str | None,
         notas: str | None,
     ) -> tuple[Cliente, list[Cliente]]:
-        """
-        Regla de negocio: duplicado se dispara si coincide teléfono O
-        email con un cliente ya existente. No se bloquea la creación
-        (dos personas pueden compartir un teléfono de casa) — solo se
-        alerta para que recepción decida si es la misma persona.
-        """
         duplicados = self.repo.buscar_por_telefono_o_email(telefono, email)
 
         cliente = Cliente(
@@ -52,8 +47,6 @@ class ClienteService:
     def actualizar(self, cliente_id: int, datos: dict) -> Cliente:
         cliente = self.obtener_por_id(cliente_id)
 
-        # Si se está cambiando teléfono o email, revalidamos duplicados
-        # contra otros clientes (excluyendo al propio).
         nuevo_telefono = datos.get("telefono", cliente.telefono)
         nuevo_email = datos.get("email", cliente.email)
         if "telefono" in datos or "email" in datos:
@@ -79,7 +72,7 @@ class ClienteService:
         cliente = self.obtener_por_id(cliente_id)
 
         reservacion_activa = next(
-            (r for r in cliente.reservaciones if r.estado in ("pendiente", "confirmada")), None
+            (r for r in cliente.reservaciones if r.estado in ESTADOS_ACTIVOS), None
         )
         if reservacion_activa:
             raise HTTPException(
