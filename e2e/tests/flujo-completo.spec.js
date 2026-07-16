@@ -84,7 +84,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
     await expect(admin).toHaveURL(new RegExp(`${escaparRegex(ADMIN_URL)}/?$`));
 
     await admin.goto(`${ADMIN_URL}/caja`);
-    await expect(admin.getByRole("heading", { name: "Caja" })).toBeVisible();
+    await expect(admin.getByRole("heading", { name: "Caja", exact: true })).toBeVisible();
     await expect(admin.getByText("No tienes una caja abierta", { exact: true })).toBeVisible();
 
     await admin.getByRole("button", { name: "Abrir caja", exact: true }).click();
@@ -97,7 +97,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
 
   await test.step("acepta, cobra, registra llegada y completa la visita", async () => {
     await admin.goto(`${ADMIN_URL}/reservaciones`);
-    await expect(admin.getByRole("heading", { name: "Reservaciones" })).toBeVisible();
+    await expect(admin.getByRole("heading", { name: "Reservaciones", exact: true })).toBeVisible();
 
     await admin.getByPlaceholder(/Buscar por folio, cliente/i).fill(nombreCliente);
     const fila = admin.getByRole("row").filter({ hasText: nombreCliente });
