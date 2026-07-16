@@ -150,7 +150,7 @@ def test_reservacion_interna_guarda_el_mismo_total_con_tarifa(db):
         fecha_salida=date(2026, 9, 16),
         unidad_hospedaje_id=None,
         num_personas=2,
-        origen="interno",
+        origen="recepcion",
         notas=None,
     )
 
