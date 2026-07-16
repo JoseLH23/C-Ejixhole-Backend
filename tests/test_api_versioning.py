@@ -18,7 +18,7 @@ RUTAS_REPRESENTATIVAS = (
 
 
 def test_todos_los_contratos_principales_existen_en_v1_y_legacy():
-    paths = {route.path for route in app.routes}
+    paths = set(app.openapi()["paths"])
 
     for legacy in RUTAS_REPRESENTATIVAS:
         assert legacy in paths
@@ -41,6 +41,19 @@ def test_ruta_legacy_sigue_funcionando_y_anuncia_sucesora():
     assert response.headers["X-API-Version"] == "legacy"
     assert response.headers["Deprecation"] == "true"
     assert response.headers["Link"] == '</api/v1/auth/me>; rel="successor-version"'
+
+
+def test_cors_expone_cabeceras_de_version_a_clientes_web():
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    exposed = response.headers["Access-Control-Expose-Headers"]
+    assert "X-API-Version" in exposed
+    assert "Deprecation" in exposed
+    assert "Link" in exposed
+    assert "X-Request-ID" in exposed
 
 
 def test_health_permanece_fuera_del_versionado_de_negocio():
