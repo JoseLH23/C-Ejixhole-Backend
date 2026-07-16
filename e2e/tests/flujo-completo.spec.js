@@ -27,7 +27,7 @@ function etiquetaFecha(fecha) {
 test("portal → backend → panel → caja → pago → check-in → check-out", async ({ browser }) => {
   const marca = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const nombreCliente = `Cliente E2E ${marca}`;
-  const emailCliente = `e2e.${marca}@example.test`;
+  const emailCliente = `e2e.${marca}@example.com`;
   const fechaVisita = fechaLocalMasDias(1);
 
   const contexto = await browser.newContext({ locale: "es-MX", timezoneId: "America/Mexico_City" });
