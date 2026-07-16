@@ -9,6 +9,7 @@ from app.routes import (
     cliente_routes,
     dashboard_routes,
     evento_calendario_routes,
+    integracion_routes,
     pago_routes,
     publico_routes,
     reporte_routes,
@@ -37,6 +38,10 @@ BUSINESS_ROUTERS = (
     tarifa_especial_routes.router,
 )
 
+# Integraciones nuevas que no tienen equivalente histórico. Se publican únicamente
+# bajo v1 para no crear una segunda superficie sin versionar.
+V1_ONLY_ROUTERS = (integracion_routes.router,)
+
 LEGACY_PREFIXES = tuple(router.prefix for router in BUSINESS_ROUTERS if router.prefix)
 
 api_v1_router = APIRouter(prefix=API_V1_PREFIX)
@@ -47,3 +52,6 @@ for business_router in BUSINESS_ROUTERS:
     # Compatibilidad temporal para paneles, scripts o integraciones que aún no
     # hayan migrado. En OpenAPI aparecen como rutas deprecadas.
     legacy_router.include_router(business_router, deprecated=True)
+
+for v1_router in V1_ONLY_ROUTERS:
+    api_v1_router.include_router(v1_router)
