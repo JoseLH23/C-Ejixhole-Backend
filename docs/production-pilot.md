@@ -16,7 +16,7 @@ El comando valida sin modificar datos:
 - panel administrativo;
 - catálogo y disponibilidad pública.
 
-El workflow `Preparación para piloto de producción` ejecuta la misma revisión con reintentos y conserva un reporte.
+El resultado se guarda en `production-pilot-report.md`.
 
 ## Requisitos antes del piloto manual
 
