@@ -1,15 +1,4 @@
-"""
-Rutas públicas — SIN autenticación. Son las únicas de todo el backend
-sin JWT/rol requerido, a propósito: las usa el sitio web público que
-verán los visitantes, no el personal interno.
-
-AL-03 (auditoría de seguridad 13/jul/2026): al ser públicas por
-diseño, no tenían ningún límite contra abuso automatizado — un bot
-podía golpear /publico/reservaciones en bucle. Rate limiting real por
-IP aplicado a nivel router.
-
-Ver docs/portal-publico-fase-2.md para el diseño completo.
-"""
+"""Rutas públicas del portal de reservaciones."""
 from datetime import date
 from typing import Optional
 
@@ -36,13 +25,11 @@ router = APIRouter(prefix="/publico", tags=["Portal público"], dependencies=[De
 
 @router.get("/servicios", response_model=list[ServicioPublicoOut])
 def listar_servicios_informativos(db: Session = Depends(get_db)):
-    """Las 12 actividades informativas — no se reservan aquí, solo se muestran."""
     return PublicoService(db).listar_servicios_informativos()
 
 
 @router.get("/unidades-hospedaje", response_model=list[UnidadHospedajePublicoOut])
 def listar_unidades_hospedaje(db: Session = Depends(get_db)):
-    """Habitación 1, Habitación 2, Cabaña 1 — para que el visitante elija."""
     return PublicoService(db).listar_unidades_hospedaje()
 
 
@@ -52,7 +39,8 @@ def listar_fechas_bloqueadas(
     hasta: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Publica únicamente rangos cerrados; títulos y notas siguen privados."""
+    """Publica solo cierres globales; los cierres de una unidad no se
+    presentan como cierre completo del parque."""
     if hasta < desde:
         raise HTTPException(status_code=400, detail="hasta no puede ser anterior a desde")
     if (hasta - desde).days > 366:
@@ -71,9 +59,14 @@ def verificar_disponibilidad(
         fecha_llegada,
         fecha_salida,
         "hospedaje",
+        unidad_hospedaje_id,
     ):
         return {"disponible": False}
-    disponible = PublicoService(db).hay_disponibilidad(unidad_hospedaje_id, fecha_llegada, fecha_salida)
+    disponible = PublicoService(db).hay_disponibilidad(
+        unidad_hospedaje_id,
+        fecha_llegada,
+        fecha_salida,
+    )
     return {"disponible": disponible}
 
 
@@ -86,15 +79,11 @@ def cotizar_reservacion(
     unidad_hospedaje_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Calcula el precio real SIN crear ninguna reservación — el paso 1
-    del asistente (tipo + fechas) lo llama para mostrar el total antes
-    de pedir los datos de contacto.
-    """
     BloqueoOperativoService(db).validar_disponibilidad(
         fecha_llegada,
         fecha_salida,
         tipo_reservacion,
+        unidad_hospedaje_id,
     )
     noches, total, desglose = PublicoService(db).cotizar(
         tipo_reservacion=tipo_reservacion,
@@ -107,20 +96,16 @@ def cotizar_reservacion(
 
 
 @router.post("/reservaciones", response_model=ReservacionPublicaOut, status_code=201)
-def crear_solicitud_reservacion(data: ReservacionPublicaCreate, request: Request, db: Session = Depends(get_db)):
-    """
-    Crea la reservación en estado "pendiente" (sin pago todavía — se
-    agrega en una fase posterior) y notifica al administrador por
-    correo (si está configurado) — siempre queda visible de inmediato
-    en el sistema interno, sin importar si el correo se envía o no.
-
-    AL-04: protegido con Idempotency-Key real — un doble clic/reintento
-    de red con la misma clave nunca crea una segunda solicitud.
-    """
+def crear_solicitud_reservacion(
+    data: ReservacionPublicaCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     BloqueoOperativoService(db).validar_disponibilidad(
         data.fecha_llegada,
         data.fecha_salida,
         data.tipo_reservacion,
+        data.unidad_hospedaje_id,
     )
     servicio = PublicoService(db)
     return ejecutar_con_idempotencia(

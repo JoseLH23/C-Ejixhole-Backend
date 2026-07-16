@@ -1,12 +1,5 @@
 """
-Rutas de Reservaciones. Protegidas con JWT + rol: admin y operador
-únicamente.
-
-AL-01 (auditoría de seguridad 13/jul/2026): usuario_id YA NO se toma
-del body — un cliente podía mandar cualquier id y atribuirle la
-reservación a otra persona. Se deriva siempre de request.usuario_actual
-(el usuario real autenticado por el JWT), imposible de falsear desde
-el cliente.
+Rutas de Reservaciones. Protegidas con JWT + rol: admin y operador únicamente.
 """
 from datetime import date
 from typing import Optional
@@ -40,6 +33,7 @@ def crear_reservacion(
         data.fecha_llegada,
         data.fecha_salida,
         data.tipo_reservacion,
+        data.unidad_hospedaje_id,
     )
     service = ReservacionService(db)
     return ejecutar_con_idempotencia(
@@ -74,8 +68,7 @@ def listar_reservaciones(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    service = ReservacionService(db)
-    return service.listar(
+    return ReservacionService(db).listar(
         cliente_id=cliente_id,
         servicio_id=servicio_id,
         estado=estado,
@@ -88,22 +81,25 @@ def listar_reservaciones(
 
 @router.get("/{reservacion_id}", response_model=ReservacionOut)
 def obtener_reservacion(reservacion_id: int, db: Session = Depends(get_db)):
-    service = ReservacionService(db)
-    return service.obtener_por_id(reservacion_id)
+    return ReservacionService(db).obtener_por_id(reservacion_id)
 
 
 @router.put("/{reservacion_id}", response_model=ReservacionOut)
 def actualizar_reservacion(reservacion_id: int, data: ReservacionUpdate, db: Session = Depends(get_db)):
-    """Edita fechas, personas, servicio y/o notas — no el tipo_reservacion
-    ni el estado (para eso sigue existiendo PATCH /{id}/estado)."""
     service = ReservacionService(db)
     actual = service.obtener_por_id(reservacion_id)
     nueva_llegada = data.fecha_llegada if data.fecha_llegada is not None else actual.fecha_llegada
     nueva_salida = data.fecha_salida if data.fecha_salida is not None else actual.fecha_salida
+    nueva_unidad_id = (
+        data.unidad_hospedaje_id
+        if data.unidad_hospedaje_id is not None
+        else actual.unidad_hospedaje_id
+    )
     BloqueoOperativoService(db).validar_disponibilidad(
         nueva_llegada,
         nueva_salida,
         actual.tipo_reservacion,
+        nueva_unidad_id,
     )
     return service.actualizar(reservacion_id, **data.model_dump(exclude_unset=True))
 
@@ -112,5 +108,4 @@ def actualizar_reservacion(reservacion_id: int, data: ReservacionUpdate, db: Ses
 def cambiar_estado_reservacion(
     reservacion_id: int, data: ReservacionEstadoUpdate, db: Session = Depends(get_db)
 ):
-    service = ReservacionService(db)
-    return service.cambiar_estado(reservacion_id, data.nuevo_estado)
+    return ReservacionService(db).cambiar_estado(reservacion_id, data.nuevo_estado)
