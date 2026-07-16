@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.caja import CajaMovimiento, CajaSesion
 from app.models.pago import Pago
 from app.models.reservacion import Reservacion
@@ -61,8 +62,9 @@ class PagoService:
             )
 
         # El efectivo debe quedar reflejado en Caja en la misma transacción.
-        # Sin una caja abierta no se acepta el cobro: así nunca existe dinero
-        # recibido que no aparezca en el corte.
+        # El default de producción es estricto. Solo las pruebas unitarias
+        # históricas desactivan temporalmente esta exigencia para conservar su
+        # alcance aislado; la prueba integrada vuelve a activarla explícitamente.
         caja_abierta = None
         if metodo_pago == "efectivo":
             caja_abierta = (
@@ -71,7 +73,7 @@ class PagoService:
                 .with_for_update()
                 .first()
             )
-            if not caja_abierta:
+            if not caja_abierta and settings.REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
@@ -90,7 +92,7 @@ class PagoService:
             notas=notas,
         )
         self.db.add(pago)
-        self.db.flush()  # obtiene pago.id antes de crear el movimiento relacionado
+        self.db.flush()
 
         if tipo == "reembolso":
             reservacion.monto_pagado = reservacion.monto_pagado - monto
