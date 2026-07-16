@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.core.security import create_access_token
 from app.database import Base, get_db
 from app.main import app
@@ -146,7 +147,8 @@ def test_no_se_puede_saltar_directamente_a_completada(contexto):
     assert "check" in response.json()["detail"].lower()
 
 
-def test_pago_efectivo_exige_caja_abierta(contexto):
+def test_pago_efectivo_exige_caja_abierta(contexto, monkeypatch):
+    monkeypatch.setattr(settings, "REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS", True)
     reservacion = contexto["reservacion"]
     response = contexto["client"].post(
         "/pagos",
