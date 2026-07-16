@@ -47,7 +47,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
       .click();
 
     await portal.getByRole("spinbutton").fill("2");
-    await expect(portal.getByText("$100.00", { exact: true })).toBeVisible();
+    await expect(portal.getByText("$100.00", { exact: true }).last()).toBeVisible();
     await portal.getByRole("button", { name: /Continuar/i }).click();
 
     const formulario = portal.locator("form");
@@ -67,7 +67,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
     expect(respuestaSolicitud.status()).toBe(201);
 
     await expect(portal.getByRole("heading", { name: /Solicitud recibida/i })).toBeVisible();
-    await expect(portal.getByText("$100.00", { exact: true })).toBeVisible();
+    await expect(portal.getByText("$100.00", { exact: true }).last()).toBeVisible();
   });
 
   const textoFolio = await portal.getByText(/Folio:\s*#\d+/i).textContent();
