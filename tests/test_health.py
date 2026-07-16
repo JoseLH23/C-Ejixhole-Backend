@@ -7,11 +7,12 @@ client = TestClient(app)
 
 
 def test_liveness_responde_sin_dependencias_externas():
-    response = client.get("/health/live")
+    response = client.get("/health/live", headers={"X-Request-ID": "prueba-health-123"})
 
     assert response.status_code == 200
     assert response.json()["status"] == "alive"
     assert response.json()["service"] == "EjiXhole Experience OS"
+    assert response.headers["X-Request-ID"] == "prueba-health-123"
 
 
 def test_readiness_confirma_base_de_datos():
@@ -22,6 +23,7 @@ def test_readiness_confirma_base_de_datos():
     assert payload["status"] == "ready"
     assert payload["checks"]["database"] == "up"
     assert payload["checks"]["notifications"] in {"configured", "not_configured"}
+    assert response.headers["X-Request-ID"]
 
 
 def test_readiness_devuelve_503_si_falla_la_base_de_datos():
