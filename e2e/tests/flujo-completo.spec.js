@@ -135,7 +135,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
 
   await test.step("el pago quedó reflejado en la caja", async () => {
     await admin.goto(`${ADMIN_URL}/caja`);
-    await expect(admin.getByText(`Pago reservación #${folio}`, { exact: true })).toBeVisible();
+    await expect(admin.getByText(`Pago reservación #${folio}`, { exact: true }).first()).toBeVisible();
     await expect(admin.getByText("Ingreso", { exact: true }).first()).toBeVisible();
     await expect(admin.getByText("$100.00", { exact: true }).first()).toBeVisible();
   });
