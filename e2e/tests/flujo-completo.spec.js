@@ -24,7 +24,7 @@ function etiquetaFecha(fecha) {
   }).format(fecha);
 }
 
-test("portal → backend → panel → caja → pago → check-in → check-out", async ({ browser }) => {
+test("portal → API v1 → panel → caja → pago → check-in → check-out", async ({ browser }) => {
   const marca = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const nombreCliente = `Cliente E2E ${marca}`;
   const emailCliente = `e2e.${marca}@example.com`;
@@ -33,7 +33,7 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
   const contexto = await browser.newContext({ locale: "es-MX", timezoneId: "America/Mexico_City" });
   const portal = await contexto.newPage();
 
-  await test.step("el visitante crea una solicitud pública real", async () => {
+  await test.step("el visitante crea una solicitud pública mediante API v1", async () => {
     await portal.goto(`${PORTAL_URL}/reservar`);
     await expect(portal.getByRole("button", { name: /Entrada/i })).toBeVisible();
 
@@ -59,12 +59,13 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
 
     const solicitud = portal.waitForResponse(
       (respuesta) =>
-        respuesta.url().endsWith("/publico/reservaciones") &&
+        respuesta.url().endsWith("/api/v1/publico/reservaciones") &&
         respuesta.request().method() === "POST"
     );
     await portal.getByRole("button", { name: /Enviar solicitud/i }).click();
     const respuestaSolicitud = await solicitud;
     expect(respuestaSolicitud.status()).toBe(201);
+    expect(respuestaSolicitud.headers()["x-api-version"]).toBe("v1");
 
     await expect(portal.getByRole("heading", { name: /Solicitud recibida/i })).toBeVisible();
     await expect(portal.getByText("$100.00", { exact: true }).last()).toBeVisible();
@@ -76,11 +77,20 @@ test("portal → backend → panel → caja → pago → check-in → check-out"
   const folio = coincidenciaFolio[1];
 
   const admin = await contexto.newPage();
-  await test.step("el administrador inicia sesión segura y abre caja", async () => {
+  await test.step("el administrador inicia sesión segura mediante API v1 y abre caja", async () => {
     await admin.goto(`${ADMIN_URL}/login`);
     await admin.getByLabel("Email").fill(ADMIN_EMAIL);
     await admin.getByLabel("Contraseña").fill(ADMIN_PASSWORD);
+
+    const login = admin.waitForResponse(
+      (respuesta) =>
+        respuesta.url().endsWith("/api/v1/auth/login") &&
+        respuesta.request().method() === "POST"
+    );
     await admin.getByRole("button", { name: /Iniciar sesión/i }).click();
+    const respuestaLogin = await login;
+    expect(respuestaLogin.status()).toBe(200);
+    expect(respuestaLogin.headers()["x-api-version"]).toBe("v1");
     await expect(admin).toHaveURL(new RegExp(`${escaparRegex(ADMIN_URL)}/?$`));
 
     expect(await admin.evaluate(() => localStorage.getItem("ejixhole_token"))).toBeNull();
