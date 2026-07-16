@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.reservacion import Reservacion
+from app.services.outbox_service import OutboxService
 
 
 class FlujoVisitaService:
@@ -62,6 +63,25 @@ class FlujoVisitaService:
         reservacion.estado = "completada"
         reservacion.fecha_checkout = datetime.now(timezone.utc)
         reservacion.checkout_usuario_id = usuario_id
+        OutboxService.record(
+            self.db,
+            event_key=f"visit.completed:{reservacion.id}",
+            event_type="visit.completed",
+            aggregate_type="reservation",
+            aggregate_id=reservacion.id,
+            payload={
+                "reservation_id": reservacion.id,
+                "reservation_type": reservacion.tipo_reservacion,
+                "arrival_date": reservacion.fecha_llegada,
+                "departure_date": reservacion.fecha_salida,
+                "people": reservacion.num_personas,
+                "total": reservacion.total,
+                "paid_amount": reservacion.monto_pagado,
+                "checkin_at": reservacion.fecha_checkin,
+                "checkout_at": reservacion.fecha_checkout,
+                "status": reservacion.estado,
+            },
+        )
         self.db.commit()
         self.db.refresh(reservacion)
         return reservacion
