@@ -29,6 +29,13 @@ def _obtener_jwt_secret_obligatorio() -> str:
     return clave
 
 
+def _env_bool(nombre: str, default: bool) -> bool:
+    valor = os.getenv(nombre)
+    if valor is None:
+        return default
+    return valor.strip().lower() in {"1", "true", "yes", "si", "sí", "on"}
+
+
 class Settings:
     PROJECT_NAME: str = "EjiXhole Experience OS"
     VERSION: str = "0.1.0"
@@ -41,6 +48,13 @@ class Settings:
     JWT_SECRET_KEY: str = _obtener_jwt_secret_obligatorio()
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
+
+    # Default restrictivo: los pagos/reembolsos en efectivo solo se aceptan
+    # con una caja abierta. La variable existe únicamente para aislar pruebas
+    # unitarias antiguas que validan cálculos de pagos sin montar Caja.
+    REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS: bool = _env_bool(
+        "REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS", True
+    )
 
     # ME-02 (auditoría de seguridad 13/jul/2026): default seguro
     # "production" — si no se configura explícitamente, se asume el

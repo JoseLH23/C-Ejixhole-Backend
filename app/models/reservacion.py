@@ -14,8 +14,8 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 
-ESTADOS_RESERVACION = ("pendiente", "confirmada", "completada", "cancelada")
-ESTADOS_ACTIVOS = ("pendiente", "confirmada")
+ESTADOS_RESERVACION = ("pendiente", "confirmada", "en_curso", "completada", "cancelada")
+ESTADOS_ACTIVOS = ("pendiente", "confirmada", "en_curso")
 ORIGENES_RESERVACION = ("recepcion", "recepcion_express", "portal", "telefono")
 TIPOS_RESERVACION = ("entrada", "camping", "hospedaje")
 
@@ -35,36 +35,17 @@ class Reservacion(Base):
         CheckConstraint(
             f"tipo_reservacion IN {TIPOS_RESERVACION}", name="ck_reservaciones_tipo_valido"
         ),
-        # NOTA (decisión explícita del negocio, ver docs/portal-publico-fase-1.md):
-        # antes existía aquí un índice único que impedía que un mismo
-        # cliente tuviera más de una reservación activa a la vez. Se
-        # eliminó a propósito: con el portal público, un cliente debe
-        # poder tener varias reservaciones activas simultáneas (ej. una
-        # visita de un día la próxima semana Y un camping dos meses
-        # después). Por eso el sistema exige contacto real del cliente
-        # (teléfono/email) — para poder resolver cualquier choque
-        # manualmente en vez de bloquearlo por regla.
     )
 
     id = Column(Integer, primary_key=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     servicio_id = Column(Integer, ForeignKey("servicios.id"), nullable=False, index=True)
-    # Nullable: las reservaciones internas siempre lo llenan (empleado
-    # que la capturó). Las del portal público lo dejan vacío — nadie
-    # del personal la creó, la hizo el visitante directamente.
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
-    # Nullable: solo se llena cuando tipo_reservacion == "hospedaje".
-    # Camping y entrada no tienen unidad individual (sin límite de cupo).
     unidad_hospedaje_id = Column(
         Integer, ForeignKey("unidades_hospedaje.id"), nullable=True, index=True
     )
 
     fecha_reservacion = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    # fecha_visita se mantiene obligatoria y NUNCA se elimina — todos los
-    # Reportes y el Dashboard ya la usan. Para reservaciones nuevas, el
-    # servicio la llena automáticamente igual a fecha_llegada, así que
-    # nada de lo existente necesita cambiar. fecha_llegada/fecha_salida
-    # son las que habilitan el cálculo por noches (camping/hospedaje).
     fecha_visita = Column(Date, nullable=False, index=True)
     fecha_llegada = Column(Date, nullable=True, index=True)
     fecha_salida = Column(Date, nullable=True)
@@ -72,13 +53,22 @@ class Reservacion(Base):
 
     estado = Column(String(20), nullable=False, default="pendiente")
     origen = Column(String(30), nullable=False, default="recepcion")
-    # Default "entrada" por compatibilidad con filas ya existentes
-    # (todas las reservaciones de antes de esta entrega son, en la
-    # práctica, visitas de un día — nunca hospedaje ni camping).
     tipo_reservacion = Column(String(20), nullable=False, default="entrada")
 
     total = Column(Numeric(10, 2), nullable=False)
     monto_pagado = Column(Numeric(10, 2), nullable=False, default=0)
+
+    # Trazabilidad del flujo operativo. `en_curso` significa que el visitante
+    # ya hizo check-in. El check-out cierra la visita y deja el estado como
+    # `completada`. Los usuarios se conservan para auditoría operativa.
+    fecha_checkin = Column(DateTime(timezone=True), nullable=True)
+    checkin_usuario_id = Column(
+        Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    fecha_checkout = Column(DateTime(timezone=True), nullable=True)
+    checkout_usuario_id = Column(
+        Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
 
     notas = Column(Text, nullable=True)
 
@@ -98,6 +88,10 @@ class Reservacion(Base):
         if self.total is None or self.monto_pagado is None:
             return None
         return self.total - self.monto_pagado
+
+    @property
+    def pago_completo(self) -> bool:
+        return self.saldo_pendiente is not None and self.saldo_pendiente <= 0
 
     def __repr__(self):
         return f"<Reservacion id={self.id} cliente_id={self.cliente_id} estado={self.estado!r}>"

@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: backend-ci-${{ github.ref }}
@@ -41,7 +42,46 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Ejecutar pruebas
-        run: pytest -q
+        id: pytest
+        continue-on-error: true
+        run: pytest -q > pytest.log 2>&1
+
+      - name: Publicar primer fallo en el PR
+        if: steps.pytest.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const lines = fs.readFileSync('pytest.log', 'utf8').trim().split('\n');
+            const tail = lines.slice(-120).join('\n');
+            const marker = '<!-- backend-ci-pytest -->';
+            const body = `${marker}\n### Fallo de pruebas del backend\n\n\`\`\`text\n${tail}\n\`\`\``;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const previous = comments.find(c => c.body && c.body.includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Marcar pruebas como fallidas
+        if: steps.pytest.outcome == 'failure'
+        run: exit 1
 
   postgres-migrations:
     name: Validar migraciones PostgreSQL

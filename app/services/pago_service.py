@@ -1,14 +1,11 @@
-"""
-Service de Pagos. Reglas de negocio; el acceso a datos de Pago se
-delega a PagoRepository. La actualización de monto_pagado en
-Reservacion vive aquí porque es la consecuencia directa de registrar
-un pago, no una responsabilidad del repository.
-"""
+"""Reglas de negocio de pagos y su integración atómica con Caja."""
 from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.models.caja import CajaMovimiento, CajaSesion
 from app.models.pago import Pago
 from app.models.reservacion import Reservacion
 from app.repositories.pago_repository import PagoRepository
@@ -29,16 +26,8 @@ class PagoService:
         referencia: str | None,
         notas: str | None,
     ) -> Pago:
-        # CR-03 (auditoría de seguridad 13/jul/2026): antes se leía
-        # monto_pagado/saldo_pendiente sin ningún bloqueo — dos cobros
-        # o reembolsos simultáneos sobre la MISMA reservación podían
-        # leer el mismo saldo antes de que ninguno confirmara, y
-        # ambos pasar la validación aunque juntos excedieran el total
-        # real. with_for_update() bloquea esta fila específica hasta
-        # que termine esta transacción (commit/rollback) — una segunda
-        # solicitud concurrente se queda esperando en la base de datos
-        # hasta que la primera termine, y entonces sí ve el saldo ya
-        # actualizado.
+        # Bloquea la reservación hasta terminar para impedir cobros simultáneos
+        # que juntos superen el saldo real.
         reservacion = (
             self.db.query(Reservacion)
             .filter(Reservacion.id == reservacion_id)
@@ -63,13 +52,33 @@ class PagoService:
                         f"${reservacion.monto_pagado} en esta reservación."
                     ),
                 )
-        else:
-            if monto > reservacion.saldo_pendiente:
+        elif monto > reservacion.saldo_pendiente:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"El monto (${monto}) excede el saldo pendiente "
+                    f"(${reservacion.saldo_pendiente}) de esta reservación."
+                ),
+            )
+
+        # El efectivo debe quedar reflejado en Caja en la misma transacción.
+        # El default de producción es estricto. Solo las pruebas unitarias
+        # históricas desactivan temporalmente esta exigencia para conservar su
+        # alcance aislado; la prueba integrada vuelve a activarla explícitamente.
+        caja_abierta = None
+        if metodo_pago == "efectivo":
+            caja_abierta = (
+                self.db.query(CajaSesion)
+                .filter(CajaSesion.usuario_id == usuario_id, CajaSesion.estado == "abierta")
+                .with_for_update()
+                .first()
+            )
+            if not caja_abierta and settings.REQUIRE_OPEN_CASH_FOR_CASH_PAYMENTS:
                 raise HTTPException(
-                    status_code=400,
+                    status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"El monto (${monto}) excede el saldo pendiente "
-                        f"(${reservacion.saldo_pendiente}) de esta reservación."
+                        "Abre una sesión de caja antes de registrar un pago o "
+                        "reembolso en efectivo."
                     ),
                 )
 
@@ -83,19 +92,31 @@ class PagoService:
             notas=notas,
         )
         self.db.add(pago)
+        self.db.flush()
 
-        # monto_pagado se mantiene aquí, en la capa de servicios, no en
-        # la base de datos (ver docs/schema.sql) — así se puede ajustar
-        # con reglas especiales sin depender de un trigger de Postgres.
         if tipo == "reembolso":
             reservacion.monto_pagado = reservacion.monto_pagado - monto
         else:
             reservacion.monto_pagado = reservacion.monto_pagado + monto
 
-        # Si ya se cubrió el total y la reservación seguía pendiente,
-        # se confirma automáticamente.
         if reservacion.monto_pagado >= reservacion.total and reservacion.estado == "pendiente":
             reservacion.estado = "confirmada"
+
+        if caja_abierta is not None:
+            es_reembolso = tipo == "reembolso"
+            movimiento = CajaMovimiento(
+                caja_sesion_id=caja_abierta.id,
+                pago_id=pago.id,
+                usuario_id=usuario_id,
+                tipo="egreso" if es_reembolso else "ingreso",
+                monto=monto,
+                concepto=(
+                    f"Reembolso reservación #{reservacion_id}"
+                    if es_reembolso
+                    else f"Pago reservación #{reservacion_id}"
+                ),
+            )
+            self.db.add(movimiento)
 
         self.db.commit()
         self.db.refresh(pago)

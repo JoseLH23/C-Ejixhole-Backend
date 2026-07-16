@@ -13,15 +13,9 @@ class ReservacionCreate(BaseModel):
     num_personas: int
     origen: str = "recepcion"
     notas: Optional[str] = Field(default=None, max_length=1000)
-
-    # Nuevo (Fase portal público): tipo de reservación y sus fechas.
-    # Para "entrada" (visita de un día), llegada y salida deben ser el
-    # mismo día. Para "camping"/"hospedaje", salida debe ser posterior
-    # a llegada (al menos 1 noche).
     tipo_reservacion: str = "entrada"
     fecha_llegada: date
     fecha_salida: date
-    # Solo obligatorio (y solo válido) cuando tipo_reservacion == "hospedaje".
     unidad_hospedaje_id: Optional[int] = None
 
     @field_validator("num_personas")
@@ -49,19 +43,20 @@ class ReservacionCreate(BaseModel):
     def fechas_y_unidad_consistentes(self):
         if self.fecha_salida < self.fecha_llegada:
             raise ValueError("fecha_salida no puede ser anterior a fecha_llegada")
-
         if self.tipo_reservacion == "entrada" and self.fecha_salida != self.fecha_llegada:
-            raise ValueError("Para 'entrada' (visita de un día), fecha_llegada y fecha_salida deben ser el mismo día")
-
+            raise ValueError(
+                "Para 'entrada' (visita de un día), fecha_llegada y fecha_salida deben ser el mismo día"
+            )
         if self.tipo_reservacion in ("camping", "hospedaje") and self.fecha_salida == self.fecha_llegada:
-            raise ValueError(f"Para '{self.tipo_reservacion}' se necesita al menos 1 noche (fecha_salida posterior a fecha_llegada)")
-
+            raise ValueError(
+                f"Para '{self.tipo_reservacion}' se necesita al menos 1 noche (fecha_salida posterior a fecha_llegada)"
+            )
         if self.tipo_reservacion == "hospedaje" and self.unidad_hospedaje_id is None:
-            raise ValueError("unidad_hospedaje_id es obligatorio cuando tipo_reservacion es 'hospedaje'")
-
+            raise ValueError(
+                "unidad_hospedaje_id es obligatorio cuando tipo_reservacion es 'hospedaje'"
+            )
         if self.tipo_reservacion != "hospedaje" and self.unidad_hospedaje_id is not None:
             raise ValueError("unidad_hospedaje_id solo aplica cuando tipo_reservacion es 'hospedaje'")
-
         return self
 
 
@@ -77,12 +72,6 @@ class ReservacionEstadoUpdate(BaseModel):
 
 
 class ReservacionUpdate(BaseModel):
-    """
-    Todos los campos opcionales: solo se actualiza lo que se envía
-    (mismo criterio que ClienteUpdate/ServicioUpdate). No incluye
-    `tipo_reservacion` a propósito — ver docstring de
-    ReservacionService.actualizar().
-    """
     servicio_id: Optional[int] = None
     fecha_llegada: Optional[date] = None
     fecha_salida: Optional[date] = None
@@ -115,6 +104,11 @@ class ReservacionOut(BaseModel):
     total: Decimal
     monto_pagado: Decimal
     saldo_pendiente: Decimal
+    pago_completo: bool
+    fecha_checkin: Optional[datetime]
+    checkin_usuario_id: Optional[int]
+    fecha_checkout: Optional[datetime]
+    checkout_usuario_id: Optional[int]
     notas: Optional[str]
     fecha_creacion: datetime
     fecha_actualizacion: datetime
