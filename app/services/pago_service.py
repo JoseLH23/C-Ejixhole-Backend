@@ -9,6 +9,7 @@ from app.models.caja import CajaMovimiento, CajaSesion
 from app.models.pago import Pago
 from app.models.reservacion import Reservacion
 from app.repositories.pago_repository import PagoRepository
+from app.services.outbox_service import OutboxService
 
 
 class PagoService:
@@ -99,7 +100,8 @@ class PagoService:
         else:
             reservacion.monto_pagado = reservacion.monto_pagado + monto
 
-        if reservacion.monto_pagado >= reservacion.total and reservacion.estado == "pendiente":
+        se_confirmo = reservacion.monto_pagado >= reservacion.total and reservacion.estado == "pendiente"
+        if se_confirmo:
             reservacion.estado = "confirmada"
 
         if caja_abierta is not None:
@@ -117,6 +119,39 @@ class PagoService:
                 ),
             )
             self.db.add(movimiento)
+
+        OutboxService.record(
+            self.db,
+            event_key=f"payment.recorded:{pago.id}",
+            event_type="payment.recorded",
+            aggregate_type="payment",
+            aggregate_id=pago.id,
+            payload={
+                "payment_id": pago.id,
+                "reservation_id": reservacion.id,
+                "amount": pago.monto,
+                "payment_type": pago.tipo,
+                "payment_method": pago.metodo_pago,
+                "paid_amount": reservacion.monto_pagado,
+                "pending_balance": reservacion.saldo_pendiente,
+                "reservation_status": reservacion.estado,
+            },
+        )
+        if se_confirmo:
+            OutboxService.record(
+                self.db,
+                event_key=f"reservation.confirmed:{reservacion.id}",
+                event_type="reservation.confirmed",
+                aggregate_type="reservation",
+                aggregate_id=reservacion.id,
+                payload={
+                    "reservation_id": reservacion.id,
+                    "status": reservacion.estado,
+                    "total": reservacion.total,
+                    "paid_amount": reservacion.monto_pagado,
+                    "confirmation_source": "payment",
+                },
+            )
 
         self.db.commit()
         self.db.refresh(pago)
