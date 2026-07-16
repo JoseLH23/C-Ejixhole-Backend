@@ -27,12 +27,13 @@ def entorno_cookie():
     session.add(rol)
     session.commit()
     session.refresh(rol)
+    rol_id = rol.id
     session.add(
         Usuario(
             nombre="Admin Cookie",
             email="cookie@ejixhole.com",
             password_hash=hash_password("secreta123"),
-            rol_id=rol.id,
+            rol_id=rol_id,
             activo=True,
         )
     )
@@ -49,7 +50,7 @@ def entorno_cookie():
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
     try:
-        yield client, rol.id
+        yield client, rol_id
     finally:
         client.close()
         app.dependency_overrides.clear()
