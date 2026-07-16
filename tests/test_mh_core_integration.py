@@ -58,6 +58,15 @@ def test_integracion_rechaza_credencial_incorrecta(monkeypatch):
     assert response.status_code == 401
 
 
+def test_integracion_rechaza_unicode_sin_error_500(monkeypatch):
+    monkeypatch.setenv("MH_CORE_SERVICE_KEY", CLAVE)
+
+    response = client.get(RUTA, headers={"X-MH-Service-Key": "clave-inválida-ñ-🔒"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Credencial de servicio inválida o faltante."
+
+
 def test_integracion_entrega_solo_metricas_agregadas(monkeypatch):
     monkeypatch.setenv("MH_CORE_SERVICE_KEY", CLAVE)
     monkeypatch.setattr(
@@ -84,5 +93,4 @@ def test_integracion_no_acepta_escrituras(monkeypatch):
     monkeypatch.setenv("MH_CORE_SERVICE_KEY", CLAVE)
 
     response = client.post(RUTA, headers={"X-MH-Service-Key": CLAVE}, json={})
-
     assert response.status_code == 405
