@@ -28,3 +28,9 @@ def dashboard_mh_core(days: int = Query(default=7, ge=1, le=31)):
 def dashboard_mh_core_predictions(days: int = Query(default=7, ge=1, le=31)):
     """Predicciones operativas de solo lectura para administradores."""
     return MhCoreDashboardService().obtener_predicciones(days=days)
+
+
+@router.get("/mh-core/predictions/evaluation")
+def dashboard_mh_core_predictions_evaluation(limit: int = Query(default=12, ge=1, le=52)):
+    """Historial de precisión de predicciones, sin exponer la clave privada."""
+    return MhCoreDashboardService().obtener_evaluacion_predicciones(limit=limit)
