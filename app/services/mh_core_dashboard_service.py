@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from fastapi import HTTPException, status
@@ -15,6 +15,9 @@ class MhCoreDashboardService:
         self.base_url = os.getenv("MH_CORE_URL", "https://mh-core.onrender.com").rstrip("/")
         self.api_key = os.getenv("MH_CORE_API_KEY", "").strip()
         self.timeout_seconds = float(os.getenv("MH_CORE_TIMEOUT_SECONDS", "20"))
+        environment = os.getenv("ENVIRONMENT", "production").strip().lower()
+        if environment == "production" and urlparse(self.base_url).scheme != "https":
+            raise RuntimeError("MH_CORE_URL debe usar HTTPS en producción.")
 
     def obtener_dashboard(self, *, days: int = 7) -> dict:
         if not self.api_key:
@@ -37,10 +40,15 @@ class MhCoreDashboardService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"MH-Core respondió con estado {exc.code}.",
             ) from exc
-        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except (URLError, TimeoutError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="MH-Core no está disponible temporalmente. Intenta de nuevo en unos segundos.",
+            ) from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="MH-Core devolvió una respuesta inesperada.",
             ) from exc
 
         if not isinstance(payload, dict) or "kpis" not in payload:
