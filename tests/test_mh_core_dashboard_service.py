@@ -47,3 +47,20 @@ def test_envia_clave_solo_desde_backend(monkeypatch):
     assert result["kpis"]["net_revenue"] == "100.00"
     assert captured["url"].endswith("executive-dashboard?days=14")
     assert captured["key"] == "clave-servidor-segura"
+
+
+def test_consulta_predicciones_sin_exponer_clave(monkeypatch):
+    monkeypatch.setenv("MH_CORE_API_KEY", "clave-servidor-segura")
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["key"] = request.headers["X-api-key"]
+        return FakeResponse({"predictions": {"expected_visitors": 24}, "confidence": "medium"})
+
+    monkeypatch.setattr("app.services.mh_core_dashboard_service.urlopen", fake_urlopen)
+    result = MhCoreDashboardService().obtener_predicciones(days=7)
+
+    assert result["predictions"]["expected_visitors"] == 24
+    assert captured["url"].endswith("predictions?days=7")
+    assert captured["key"] == "clave-servidor-segura"

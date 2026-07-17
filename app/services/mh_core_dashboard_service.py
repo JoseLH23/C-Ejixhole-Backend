@@ -1,4 +1,4 @@
-"""Cliente servidor-a-servidor para el dashboard ejecutivo privado de MH-Core."""
+"""Cliente servidor-a-servidor para inteligencia privada de MH-Core."""
 from __future__ import annotations
 
 import json
@@ -19,16 +19,16 @@ class MhCoreDashboardService:
         if environment == "production" and urlparse(self.base_url).scheme != "https":
             raise RuntimeError("MH_CORE_URL debe usar HTTPS en producción.")
 
-    def obtener_dashboard(self, *, days: int = 7) -> dict:
+    def _get(self, path: str, *, params: dict[str, object], required_key: str) -> dict:
         if not self.api_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="La integración con MH-Core todavía no está configurada.",
             )
 
-        query = urlencode({"days": days})
+        query = urlencode(params)
         request = Request(
-            f"{self.base_url}/integrations/ejixhole/executive-dashboard?{query}",
+            f"{self.base_url}{path}?{query}",
             headers={"X-API-Key": self.api_key, "Accept": "application/json"},
             method="GET",
         )
@@ -51,9 +51,23 @@ class MhCoreDashboardService:
                 detail="MH-Core devolvió una respuesta inesperada.",
             ) from exc
 
-        if not isinstance(payload, dict) or "kpis" not in payload:
+        if not isinstance(payload, dict) or required_key not in payload:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="MH-Core devolvió una respuesta inesperada.",
             )
         return payload
+
+    def obtener_dashboard(self, *, days: int = 7) -> dict:
+        return self._get(
+            "/integrations/ejixhole/executive-dashboard",
+            params={"days": days},
+            required_key="kpis",
+        )
+
+    def obtener_predicciones(self, *, days: int = 7) -> dict:
+        return self._get(
+            "/integrations/ejixhole/predictions",
+            params={"days": days},
+            required_key="predictions",
+        )
