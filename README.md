@@ -123,6 +123,22 @@ Direcciones locales:
 - Swagger: `http://127.0.0.1:8000/docs`
 - Estado: `http://127.0.0.1:8000/status`
 
+## Despliegue en Render Free
+
+El plan gratuito no ofrece Shell. Para evitar que producción quede atrasada
+respecto al código, utiliza este **Start Command**:
+
+```text
+python -m scripts.start_render
+```
+
+Ese módulo ejecuta primero `alembic upgrade head` y solo inicia Uvicorn cuando
+la migración termina correctamente. Si Alembic falla, el despliegue también
+falla y la API no arranca con un esquema incompleto.
+
+No combines este comando con `downgrade`, `drop`, `reset` ni creación manual de
+tablas. Alembic sigue siendo la única fuente de verdad del esquema.
+
 ## Pruebas
 
 ```powershell
