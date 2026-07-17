@@ -22,3 +22,9 @@ def dashboard_resumen(db: Session = Depends(get_db)):
 def dashboard_mh_core(days: int = Query(default=7, ge=1, le=31)):
     """Intermediario seguro: la clave privada de MH-Core nunca llega al navegador."""
     return MhCoreDashboardService().obtener_dashboard(days=days)
+
+
+@router.get("/mh-core/predictions")
+def dashboard_mh_core_predictions(days: int = Query(default=7, ge=1, le=31)):
+    """Predicciones operativas de solo lectura para administradores."""
+    return MhCoreDashboardService().obtener_predicciones(days=days)
