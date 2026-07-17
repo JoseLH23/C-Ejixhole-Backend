@@ -71,3 +71,10 @@ class MhCoreDashboardService:
             params={"days": days},
             required_key="predictions",
         )
+
+    def obtener_evaluacion_predicciones(self, *, limit: int = 12) -> dict:
+        return self._get(
+            "/integrations/ejixhole/predictions/evaluation",
+            params={"limit": limit},
+            required_key="evaluations",
+        )
