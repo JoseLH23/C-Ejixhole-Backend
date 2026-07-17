@@ -7,7 +7,8 @@ import sys
 
 
 def uvicorn_command(port: str | None = None) -> list[str]:
-    resolved_port = (port or os.getenv("PORT", "8000")).strip()
+    raw_port = os.getenv("PORT", "8000") if port is None else port
+    resolved_port = raw_port.strip()
     if not resolved_port.isdigit() or not 1 <= int(resolved_port) <= 65535:
         raise RuntimeError("PORT debe ser un número entre 1 y 65535.")
     return [
