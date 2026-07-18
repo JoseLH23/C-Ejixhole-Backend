@@ -1,0 +1,84 @@
+name: DR - Restore check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/database_backup.py
+      - scripts/database_restore.py
+      - alembic/**
+      - .github/workflows/dr-restore-check.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/database_backup.py
+      - scripts/database_restore.py
+      - alembic/**
+      - .github/workflows/dr-restore-check.yml
+  schedule:
+    - cron: "23 10 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql://postgres@127.0.0.1:5432/source_db
+      RESTORE_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/restore_db
+      JWT_SECRET_KEY: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - run: |
+          createdb -h 127.0.0.1 -U postgres source_db
+          createdb -h 127.0.0.1 -U postgres restore_db
+      - run: alembic upgrade head
+      - run: python scripts/database_backup.py --output-dir .dr-artifacts --prefix ci
+      - shell: bash
+        run: |
+          BACKUP="$(find .dr-artifacts -name '*.dump' -type f -print -quit)"
+          test -n "$BACKUP"
+          python scripts/database_restore.py --backup "$BACKUP" --target-database-url "$RESTORE_DATABASE_URL" --confirm-database-name restore_db
+      - shell: bash
+        run: |
+          SOURCE_VERSION="$(psql "$DATABASE_URL" -tAc 'SELECT version_num FROM alembic_version LIMIT 1')"
+          TARGET_VERSION="$(psql "$RESTORE_DATABASE_URL" -tAc 'SELECT version_num FROM alembic_version LIMIT 1')"
+          SOURCE_TABLES="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")"
+          TARGET_TABLES="$(psql "$RESTORE_DATABASE_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")"
+          test "$SOURCE_VERSION" = "$TARGET_VERSION"
+          test "$SOURCE_TABLES" = "$TARGET_TABLES"
+          test "$TARGET_TABLES" -gt 0
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dr-restore-evidence
+          path: .dr-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
