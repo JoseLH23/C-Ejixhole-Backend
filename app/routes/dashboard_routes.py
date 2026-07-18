@@ -36,20 +36,16 @@ def dashboard_mh_core_decisions(limit: int = Query(default=50, ge=1, le=200)):
     return MhCoreDashboardService().obtener_centro_decisiones(limit=limit)
 
 
+@router.get("/mh-core/profitability")
+def dashboard_mh_core_profitability(days: int = Query(default=30, ge=1, le=365)):
+    return MhCoreDashboardService().obtener_ingresos_por_servicio(days=days)
+
+
 @router.post("/mh-core/predictions/recommendations/{code}/decision")
 def dashboard_mh_core_recommendation_decision(code: str, business_date: str, decision: str):
-    return MhCoreDashboardService().decidir_recomendacion(
-        business_date=business_date, code=code, decision=decision
-    )
+    return MhCoreDashboardService().decidir_recomendacion(business_date=business_date, code=code, decision=decision)
 
 
 @router.post("/mh-core/predictions/recommendations/{code}/outcome")
-def dashboard_mh_core_recommendation_outcome(
-    code: str,
-    business_date: str,
-    outcome: str,
-    note: str | None = Query(default=None, max_length=500),
-):
-    return MhCoreDashboardService().registrar_resultado(
-        business_date=business_date, code=code, outcome=outcome, note=note
-    )
+def dashboard_mh_core_recommendation_outcome(code: str, business_date: str, outcome: str, note: str | None = Query(default=None, max_length=500)):
+    return MhCoreDashboardService().registrar_resultado(business_date=business_date, code=code, outcome=outcome, note=note)
