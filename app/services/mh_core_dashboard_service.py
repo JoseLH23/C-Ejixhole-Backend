@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import os
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 
 class MhCoreDashboardService:
@@ -53,21 +53,16 @@ class MhCoreDashboardService:
     def obtener_evaluacion_predicciones(self, *, limit: int = 12) -> dict:
         return self._get("/integrations/ejixhole/predictions/evaluation", params={"limit": limit}, required_key="evaluations")
 
+    @staticmethod
+    def _recommendation_path(code: str, suffix: str) -> str:
+        encoded_code = quote(code, safe="")
+        return f"/integrations/ejixhole/predictions/recommendations/{encoded_code}/{suffix}"
+
     def decidir_recomendacion(self, *, business_date: str, code: str, decision: str) -> dict:
-        return self._request(
-            "POST",
-            f"/integrations/ejixhole/predictions/recommendations/{code}/decision",
-            params={"business_date": business_date, "decision": decision},
-            required_key="decision",
-        )
+        return self._request("POST", self._recommendation_path(code, "decision"), params={"business_date": business_date, "decision": decision}, required_key="decision")
 
     def registrar_resultado(self, *, business_date: str, code: str, outcome: str, note: str | None = None) -> dict:
         params: dict[str, object] = {"business_date": business_date, "outcome": outcome}
         if note:
             params["note"] = note
-        return self._request(
-            "POST",
-            f"/integrations/ejixhole/predictions/recommendations/{code}/outcome",
-            params=params,
-            required_key="outcome",
-        )
+        return self._request("POST", self._recommendation_path(code, "outcome"), params=params, required_key="outcome")
