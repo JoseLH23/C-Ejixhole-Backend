@@ -31,6 +31,11 @@ def dashboard_mh_core_predictions_evaluation(limit: int = Query(default=12, ge=1
     return MhCoreDashboardService().obtener_evaluacion_predicciones(limit=limit)
 
 
+@router.get("/mh-core/decisions")
+def dashboard_mh_core_decisions(limit: int = Query(default=50, ge=1, le=200)):
+    return MhCoreDashboardService().obtener_centro_decisiones(limit=limit)
+
+
 @router.post("/mh-core/predictions/recommendations/{code}/decision")
 def dashboard_mh_core_recommendation_decision(code: str, business_date: str, decision: str):
     return MhCoreDashboardService().decidir_recomendacion(
