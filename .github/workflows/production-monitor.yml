@@ -38,7 +38,7 @@ jobs:
 
       - name: Abrir o actualizar alerta
         if: steps.monitor.outcome == 'failure'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -75,7 +75,7 @@ jobs:
 
       - name: Cerrar alerta al recuperarse
         if: steps.monitor.outcome == 'success'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = '[ALERTA] Servicios de EjiXhole no disponibles';
