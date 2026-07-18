@@ -70,8 +70,8 @@ jobs:
         run: |
           SOURCE_VERSION="$(psql "$DATABASE_URL" -tAc 'SELECT version_num FROM alembic_version LIMIT 1')"
           TARGET_VERSION="$(psql "$RESTORE_DATABASE_URL" -tAc 'SELECT version_num FROM alembic_version LIMIT 1')"
-          SOURCE_TABLES="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public')"
-          TARGET_TABLES="$(psql "$RESTORE_DATABASE_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public')"
+          SOURCE_TABLES="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")"
+          TARGET_TABLES="$(psql "$RESTORE_DATABASE_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")"
           test "$SOURCE_VERSION" = "$TARGET_VERSION"
           test "$SOURCE_TABLES" = "$TARGET_TABLES"
           test "$TARGET_TABLES" -gt 0
