@@ -65,7 +65,11 @@ jobs:
         run: |
           BACKUP="$(find .dr-artifacts -name '*.dump' -type f -print -quit)"
           test -n "$BACKUP"
-          python scripts/database_restore.py --backup "$BACKUP" --target-database-url "$RESTORE_DATABASE_URL" --confirm-database-name restore_db
+          set +e
+          python scripts/database_restore.py --backup "$BACKUP" --target-database-url "$RESTORE_DATABASE_URL" --confirm-database-name restore_db > .dr-artifacts/restore.log 2>&1
+          STATUS=$?
+          cat .dr-artifacts/restore.log
+          exit $STATUS
       - shell: bash
         run: |
           SOURCE_VERSION="$(psql "$DATABASE_URL" -tAc 'SELECT version_num FROM alembic_version LIMIT 1')"
