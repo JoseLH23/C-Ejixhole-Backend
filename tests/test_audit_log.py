@@ -117,8 +117,8 @@ def test_api_de_auditoria_es_solo_lectura_y_la_migracion_es_append_only():
     rutas = Path("app/routes/audit_routes.py").read_text(encoding="utf-8")
     migracion = Path("alembic/versions/0015_business_audit_log.py").read_text(encoding="utf-8")
 
-    assert '@router.get("")' in rutas
-    assert '@router.get("/{evento_id}")' in rutas
+    assert '@router.get(""' in rutas
+    assert '@router.get("/{evento_id}"' in rutas
     assert "@router.post" not in rutas
     assert "@router.put" not in rutas
     assert "@router.patch" not in rutas
