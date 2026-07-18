@@ -19,62 +19,55 @@ class MhCoreDashboardService:
         if environment == "production" and urlparse(self.base_url).scheme != "https":
             raise RuntimeError("MH_CORE_URL debe usar HTTPS en producción.")
 
-    def _get(self, path: str, *, params: dict[str, object], required_key: str) -> dict:
+    def _request(self, method: str, path: str, *, params: dict[str, object], required_key: str) -> dict:
         if not self.api_key:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="La integración con MH-Core todavía no está configurada.",
-            )
-
+            raise HTTPException(status_code=503, detail="La integración con MH-Core todavía no está configurada.")
         query = urlencode(params)
         request = Request(
             f"{self.base_url}{path}?{query}",
             headers={"X-API-Key": self.api_key, "Accept": "application/json"},
-            method="GET",
+            method=method,
         )
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"MH-Core respondió con estado {exc.code}.",
-            ) from exc
+            raise HTTPException(status_code=502, detail=f"MH-Core respondió con estado {exc.code}.") from exc
         except (URLError, TimeoutError) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="MH-Core no está disponible temporalmente. Intenta de nuevo en unos segundos.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="MH-Core no está disponible temporalmente. Intenta de nuevo en unos segundos.") from exc
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="MH-Core devolvió una respuesta inesperada.",
-            ) from exc
-
+            raise HTTPException(status_code=502, detail="MH-Core devolvió una respuesta inesperada.") from exc
         if not isinstance(payload, dict) or required_key not in payload:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="MH-Core devolvió una respuesta inesperada.",
-            )
+            raise HTTPException(status_code=502, detail="MH-Core devolvió una respuesta inesperada.")
         return payload
 
+    def _get(self, path: str, *, params: dict[str, object], required_key: str) -> dict:
+        return self._request("GET", path, params=params, required_key=required_key)
+
     def obtener_dashboard(self, *, days: int = 7) -> dict:
-        return self._get(
-            "/integrations/ejixhole/executive-dashboard",
-            params={"days": days},
-            required_key="kpis",
-        )
+        return self._get("/integrations/ejixhole/executive-dashboard", params={"days": days}, required_key="kpis")
 
     def obtener_predicciones(self, *, days: int = 7) -> dict:
-        return self._get(
-            "/integrations/ejixhole/predictions",
-            params={"days": days},
-            required_key="predictions",
-        )
+        return self._get("/integrations/ejixhole/predictions", params={"days": days}, required_key="predictions")
 
     def obtener_evaluacion_predicciones(self, *, limit: int = 12) -> dict:
-        return self._get(
-            "/integrations/ejixhole/predictions/evaluation",
-            params={"limit": limit},
-            required_key="evaluations",
+        return self._get("/integrations/ejixhole/predictions/evaluation", params={"limit": limit}, required_key="evaluations")
+
+    def decidir_recomendacion(self, *, business_date: str, code: str, decision: str) -> dict:
+        return self._request(
+            "POST",
+            f"/integrations/ejixhole/predictions/recommendations/{code}/decision",
+            params={"business_date": business_date, "decision": decision},
+            required_key="decision",
+        )
+
+    def registrar_resultado(self, *, business_date: str, code: str, outcome: str, note: str | None = None) -> dict:
+        params: dict[str, object] = {"business_date": business_date, "outcome": outcome}
+        if note:
+            params["note"] = note
+        return self._request(
+            "POST",
+            f"/integrations/ejixhole/predictions/recommendations/{code}/outcome",
+            params=params,
+            required_key="outcome",
         )
