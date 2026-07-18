@@ -1,7 +1,7 @@
 """Rutas de autenticación y sesión administrativa."""
 from secrets import token_urlsafe
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -10,9 +10,11 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.usuario import Usuario
 from app.schemas.auth import LoginRequest, Token, UsuarioCreate, UsuarioOut
+from app.services.audit_service import AuditService, snapshot
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+_USUARIO_CAMPOS = ("id", "nombre", "email", "rol_id", "activo", "fecha_creacion", "fecha_actualizacion")
 
 
 def _opciones_cookie(*, httponly: bool) -> dict:
@@ -28,42 +30,20 @@ def _opciones_cookie(*, httponly: bool) -> dict:
 def _guardar_sesion(response: Response, token: str) -> None:
     max_age = settings.JWT_EXPIRE_MINUTES * 60
     csrf_token = token_urlsafe(32)
-
-    response.set_cookie(
-        key=settings.AUTH_COOKIE_NAME,
-        value=token,
-        max_age=max_age,
-        **_opciones_cookie(httponly=True),
-    )
-    response.set_cookie(
-        key=settings.CSRF_COOKIE_NAME,
-        value=csrf_token,
-        max_age=max_age,
-        **_opciones_cookie(httponly=False),
-    )
+    response.set_cookie(key=settings.AUTH_COOKIE_NAME, value=token, max_age=max_age, **_opciones_cookie(httponly=True))
+    response.set_cookie(key=settings.CSRF_COOKIE_NAME, value=csrf_token, max_age=max_age, **_opciones_cookie(httponly=False))
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
 
 
 def _borrar_sesion(response: Response) -> None:
-    response.delete_cookie(
-        key=settings.AUTH_COOKIE_NAME,
-        **_opciones_cookie(httponly=True),
-    )
-    response.delete_cookie(
-        key=settings.CSRF_COOKIE_NAME,
-        **_opciones_cookie(httponly=False),
-    )
+    response.delete_cookie(key=settings.AUTH_COOKIE_NAME, **_opciones_cookie(httponly=True))
+    response.delete_cookie(key=settings.CSRF_COOKIE_NAME, **_opciones_cookie(httponly=False))
     response.headers["Cache-Control"] = "no-store"
 
 
 @router.post("/login", response_model=Token, dependencies=[Depends(limitar_login)])
 def login(data: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    """Inicia sesión mediante cookie HttpOnly.
-
-    El token sigue en la respuesta por compatibilidad temporal con scripts y
-    clientes Bearer existentes. El panel web ya no lo persiste ni lo usa.
-    """
     service = AuthService(db)
     token = service.autenticar(data.email, data.password)
     _guardar_sesion(response, token)
@@ -71,26 +51,31 @@ def login(data: LoginRequest, response: Response, db: Session = Depends(get_db))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(
-    response: Response,
-    _usuario: Usuario = Depends(get_current_user),
-):
-    """Cierra la sesión actual y elimina ambas cookies."""
+def logout(response: Response, _usuario: Usuario = Depends(get_current_user)):
     _borrar_sesion(response)
     return None
 
 
 @router.get("/me", response_model=UsuarioOut)
-def obtener_perfil_actual(
-    response: Response,
-    usuario: Usuario = Depends(get_current_user),
-):
+def obtener_perfil_actual(response: Response, usuario: Usuario = Depends(get_current_user)):
     response.headers["Cache-Control"] = "no-store"
     return usuario
 
 
-@router.post("/usuarios", response_model=UsuarioOut, dependencies=[Depends(require_roles("admin"))])
-def crear_usuario(data: UsuarioCreate, db: Session = Depends(get_db)):
-    """Solo un admin puede dar de alta nuevos usuarios del sistema."""
-    service = AuthService(db)
-    return service.crear_usuario(data.nombre, data.email, data.password, data.rol_id)
+@router.post("/usuarios", response_model=UsuarioOut)
+def crear_usuario(
+    data: UsuarioCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: Usuario = Depends(require_roles("admin")),
+):
+    usuario = AuthService(db).crear_usuario(data.nombre, data.email, data.password, data.rol_id)
+    AuditService(db).registrar(
+        actor=actor,
+        accion="usuario.creado",
+        entidad_tipo="usuario",
+        entidad_id=usuario.id,
+        request=request,
+        despues=snapshot(usuario, _USUARIO_CAMPOS),
+    )
+    return usuario
