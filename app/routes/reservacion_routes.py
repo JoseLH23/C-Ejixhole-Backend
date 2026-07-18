@@ -9,12 +9,8 @@ from app.core.idempotency import ejecutar_con_idempotencia
 from app.database import get_db
 from app.dependencies import require_roles
 from app.models.usuario import Usuario
-from app.schemas.reservacion import (
-    ReservacionCreate,
-    ReservacionEstadoUpdate,
-    ReservacionOut,
-    ReservacionUpdate,
-)
+from app.schemas.reservacion import ReservacionCreate, ReservacionEstadoUpdate, ReservacionOut, ReservacionUpdate
+from app.services.audit_service import AuditService, obtener_id_entidad, snapshot
 from app.services.bloqueo_operativo_service import BloqueoOperativoService
 from app.services.flujo_visita_service import FlujoVisitaService
 from app.services.reservacion_service import ReservacionService
@@ -34,13 +30,10 @@ def crear_reservacion(
     usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
 ):
     BloqueoOperativoService(db).validar_disponibilidad(
-        data.fecha_llegada,
-        data.fecha_salida,
-        data.tipo_reservacion,
-        data.unidad_hospedaje_id,
+        data.fecha_llegada, data.fecha_salida, data.tipo_reservacion, data.unidad_hospedaje_id
     )
     service = ReservacionService(db)
-    return ejecutar_con_idempotencia(
+    resultado = ejecutar_con_idempotencia(
         db,
         request,
         endpoint="crear_reservacion",
@@ -59,6 +52,16 @@ def crear_reservacion(
         ),
         schema_salida=ReservacionOut,
     )
+    entidad_id = obtener_id_entidad(resultado)
+    AuditService(db).registrar(
+        actor=usuario_actual,
+        accion="reservacion.creada",
+        entidad_tipo="reservacion",
+        entidad_id=entidad_id,
+        request=request,
+        despues=resultado,
+    )
+    return resultado
 
 
 @router.get("", response_model=list[ReservacionOut])
@@ -89,55 +92,103 @@ def obtener_reservacion(reservacion_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{reservacion_id}", response_model=ReservacionOut)
-def actualizar_reservacion(reservacion_id: int, data: ReservacionUpdate, db: Session = Depends(get_db)):
+def actualizar_reservacion(
+    reservacion_id: int,
+    data: ReservacionUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: Usuario = Depends(require_roles("admin", "operador")),
+):
     service = ReservacionService(db)
     actual = service.obtener_por_id(reservacion_id)
+    antes = snapshot(actual)
     nueva_llegada = data.fecha_llegada if data.fecha_llegada is not None else actual.fecha_llegada
     nueva_salida = data.fecha_salida if data.fecha_salida is not None else actual.fecha_salida
-    nueva_unidad_id = (
-        data.unidad_hospedaje_id
-        if data.unidad_hospedaje_id is not None
-        else actual.unidad_hospedaje_id
-    )
+    nueva_unidad_id = data.unidad_hospedaje_id if data.unidad_hospedaje_id is not None else actual.unidad_hospedaje_id
     BloqueoOperativoService(db).validar_disponibilidad(
-        nueva_llegada,
-        nueva_salida,
-        actual.tipo_reservacion,
-        nueva_unidad_id,
+        nueva_llegada, nueva_salida, actual.tipo_reservacion, nueva_unidad_id
     )
-    return service.actualizar(reservacion_id, **data.model_dump(exclude_unset=True))
+    resultado = service.actualizar(reservacion_id, **data.model_dump(exclude_unset=True))
+    AuditService(db).registrar(
+        actor=actor,
+        accion="reservacion.actualizada",
+        entidad_tipo="reservacion",
+        entidad_id=reservacion_id,
+        request=request,
+        antes=antes,
+        despues=resultado,
+    )
+    return resultado
 
 
 @router.patch("/{reservacion_id}/estado", response_model=ReservacionOut)
 def cambiar_estado_reservacion(
-    reservacion_id: int, data: ReservacionEstadoUpdate, db: Session = Depends(get_db)
+    reservacion_id: int,
+    data: ReservacionEstadoUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: Usuario = Depends(require_roles("admin", "operador")),
 ):
-    # `en_curso` y `completada` tienen reglas propias (usuario, fecha y saldo).
-    # No se permite saltarlas usando el endpoint genérico de estado.
     if data.nuevo_estado in {"en_curso", "completada"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Usa el check-in o check-out correspondiente; esos estados "
-                "no pueden asignarse directamente."
-            ),
+            detail="Usa el check-in o check-out correspondiente; esos estados no pueden asignarse directamente.",
         )
-    return ReservacionService(db).cambiar_estado(reservacion_id, data.nuevo_estado)
+    service = ReservacionService(db)
+    antes = snapshot(service.obtener_por_id(reservacion_id))
+    resultado = service.cambiar_estado(reservacion_id, data.nuevo_estado)
+    AuditService(db).registrar(
+        actor=actor,
+        accion="reservacion.estado_actualizado",
+        entidad_tipo="reservacion",
+        entidad_id=reservacion_id,
+        request=request,
+        antes=antes,
+        despues=resultado,
+        contexto={"nuevo_estado": data.nuevo_estado},
+    )
+    return resultado
 
 
 @router.post("/{reservacion_id}/check-in", response_model=ReservacionOut)
 def registrar_check_in(
     reservacion_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
 ):
-    return FlujoVisitaService(db).check_in(reservacion_id, usuario_actual.id)
+    service = ReservacionService(db)
+    antes = snapshot(service.obtener_por_id(reservacion_id))
+    resultado = FlujoVisitaService(db).check_in(reservacion_id, usuario_actual.id)
+    AuditService(db).registrar(
+        actor=usuario_actual,
+        accion="reservacion.check_in",
+        entidad_tipo="reservacion",
+        entidad_id=reservacion_id,
+        request=request,
+        antes=antes,
+        despues=resultado,
+    )
+    return resultado
 
 
 @router.post("/{reservacion_id}/check-out", response_model=ReservacionOut)
 def registrar_check_out(
     reservacion_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(require_roles("admin", "operador")),
 ):
-    return FlujoVisitaService(db).check_out(reservacion_id, usuario_actual.id)
+    service = ReservacionService(db)
+    antes = snapshot(service.obtener_por_id(reservacion_id))
+    resultado = FlujoVisitaService(db).check_out(reservacion_id, usuario_actual.id)
+    AuditService(db).registrar(
+        actor=usuario_actual,
+        accion="reservacion.check_out",
+        entidad_tipo="reservacion",
+        entidad_id=reservacion_id,
+        request=request,
+        antes=antes,
+        despues=resultado,
+    )
+    return resultado

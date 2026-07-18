@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.routes import auth_routes, caja_routes, cliente_routes, dashboard_routes, evento_calendario_routes, integracion_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, status_api_routes, tarifa_especial_routes, usuario_routes
+from app.routes import audit_routes, auth_routes, caja_routes, cliente_routes, dashboard_routes, evento_calendario_routes, integracion_routes, pago_routes, publico_routes, reporte_routes, reservacion_routes, servicio_routes, status_api_routes, tarifa_especial_routes, usuario_routes
 
 API_V1_PREFIX = "/api/v1"
 
@@ -22,7 +22,7 @@ BUSINESS_ROUTERS = (
     tarifa_especial_routes.router,
 )
 
-V1_ONLY_ROUTERS = (integracion_routes.router, status_api_routes.router)
+V1_ONLY_ROUTERS = (integracion_routes.router, status_api_routes.router, audit_routes.router)
 
 LEGACY_PREFIXES = tuple(router.prefix for router in BUSINESS_ROUTERS if router.prefix)
 
