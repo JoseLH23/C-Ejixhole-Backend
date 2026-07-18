@@ -8,9 +8,7 @@ from app.schemas.dashboard import DashboardResumenOut
 from app.services.dashboard_service import DashboardService
 from app.services.mh_core_dashboard_service import MhCoreDashboardService
 
-router = APIRouter(
-    prefix="/dashboard", tags=["Dashboard"], dependencies=[Depends(require_roles("admin"))]
-)
+router = APIRouter(prefix="/dashboard", tags=["Dashboard"], dependencies=[Depends(require_roles("admin"))])
 
 
 @router.get("/resumen", response_model=DashboardResumenOut)
@@ -20,17 +18,33 @@ def dashboard_resumen(db: Session = Depends(get_db)):
 
 @router.get("/mh-core")
 def dashboard_mh_core(days: int = Query(default=7, ge=1, le=31)):
-    """Intermediario seguro: la clave privada de MH-Core nunca llega al navegador."""
     return MhCoreDashboardService().obtener_dashboard(days=days)
 
 
 @router.get("/mh-core/predictions")
 def dashboard_mh_core_predictions(days: int = Query(default=7, ge=1, le=31)):
-    """Predicciones operativas de solo lectura para administradores."""
     return MhCoreDashboardService().obtener_predicciones(days=days)
 
 
 @router.get("/mh-core/predictions/evaluation")
 def dashboard_mh_core_predictions_evaluation(limit: int = Query(default=12, ge=1, le=52)):
-    """Historial de precisión de predicciones, sin exponer la clave privada."""
     return MhCoreDashboardService().obtener_evaluacion_predicciones(limit=limit)
+
+
+@router.post("/mh-core/predictions/recommendations/{code}/decision")
+def dashboard_mh_core_recommendation_decision(code: str, business_date: str, decision: str):
+    return MhCoreDashboardService().decidir_recomendacion(
+        business_date=business_date, code=code, decision=decision
+    )
+
+
+@router.post("/mh-core/predictions/recommendations/{code}/outcome")
+def dashboard_mh_core_recommendation_outcome(
+    code: str,
+    business_date: str,
+    outcome: str,
+    note: str | None = Query(default=None, max_length=500),
+):
+    return MhCoreDashboardService().registrar_resultado(
+        business_date=business_date, code=code, outcome=outcome, note=note
+    )
