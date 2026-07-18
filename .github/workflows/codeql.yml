@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Descargar repositorio
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Inicializar CodeQL
         uses: github/codeql-action/init@v4
