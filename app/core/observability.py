@@ -25,6 +25,7 @@ class RequestObservabilityMiddleware:
 
         request = Request(scope)
         request_id = request.headers.get("x-request-id") or str(uuid4())
+        scope.setdefault("state", {})["request_id"] = request_id
         started = time.perf_counter()
         status_code = 500
 
