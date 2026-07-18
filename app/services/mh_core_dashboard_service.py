@@ -55,6 +55,9 @@ class MhCoreDashboardService:
     def obtener_centro_decisiones(self, *, limit: int = 50) -> dict:
         return self._get("/integrations/ejixhole/decisions", params={"limit": limit}, required_key="items")
 
+    def obtener_ingresos_por_servicio(self, *, days: int = 30) -> dict:
+        return self._get("/integrations/ejixhole/profitability", params={"days": days}, required_key="services")
+
     @staticmethod
     def _recommendation_path(code: str, suffix: str) -> str:
         return f"/integrations/ejixhole/predictions/recommendations/{quote(code, safe='')}/{suffix}"
