@@ -22,9 +22,8 @@ class MhCoreDashboardService:
     def _request(self, method: str, path: str, *, params: dict[str, object], required_key: str) -> dict:
         if not self.api_key:
             raise HTTPException(status_code=503, detail="La integración con MH-Core todavía no está configurada.")
-        query = urlencode(params)
         request = Request(
-            f"{self.base_url}{path}?{query}",
+            f"{self.base_url}{path}?{urlencode(params)}",
             headers={"X-API-Key": self.api_key, "Accept": "application/json"},
             method=method,
         )
@@ -53,10 +52,12 @@ class MhCoreDashboardService:
     def obtener_evaluacion_predicciones(self, *, limit: int = 12) -> dict:
         return self._get("/integrations/ejixhole/predictions/evaluation", params={"limit": limit}, required_key="evaluations")
 
+    def obtener_centro_decisiones(self, *, limit: int = 50) -> dict:
+        return self._get("/integrations/ejixhole/decisions", params={"limit": limit}, required_key="items")
+
     @staticmethod
     def _recommendation_path(code: str, suffix: str) -> str:
-        encoded_code = quote(code, safe="")
-        return f"/integrations/ejixhole/predictions/recommendations/{encoded_code}/{suffix}"
+        return f"/integrations/ejixhole/predictions/recommendations/{quote(code, safe='')}/{suffix}"
 
     def decidir_recomendacion(self, *, business_date: str, code: str, decision: str) -> dict:
         return self._request("POST", self._recommendation_path(code, "decision"), params={"business_date": business_date, "decision": decision}, required_key="decision")
