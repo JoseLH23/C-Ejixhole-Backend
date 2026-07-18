@@ -8,16 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.idempotency import ejecutar_con_idempotencia
 from app.core.rate_limiter import limitar_publico
 from app.database import get_db
-from app.schemas.publico import (
-    CotizacionOut,
-    DisponibilidadOut,
-    FechaBloqueadaPublicaOut,
-    PeriodoNoDisponibleOut,
-    ReservacionPublicaCreate,
-    ReservacionPublicaOut,
-    ServicioPublicoOut,
-    UnidadHospedajePublicoOut,
-)
+from app.schemas.publico import CotizacionOut, DisponibilidadOut, FechaBloqueadaPublicaOut, PeriodoNoDisponibleOut, ReservacionPublicaCreate, ReservacionPublicaOut, ServicioPublicoOut, UnidadHospedajePublicoOut
+from app.services.audit_service import AuditService, obtener_id_entidad
 from app.services.bloqueo_operativo_service import BloqueoOperativoService
 from app.services.publico_service import PublicoService
 
@@ -54,7 +46,6 @@ def listar_disponibilidad_calendario(
     hasta: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Devuelve solo rangos ocupados/cerrados; nunca datos personales."""
     _validar_rango(desde, hasta)
     return PublicoService(db).listar_periodos_no_disponibles(unidad_hospedaje_id, desde, hasta)
 
@@ -97,7 +88,7 @@ def crear_solicitud_reservacion(data: ReservacionPublicaCreate, request: Request
         data.fecha_llegada, data.fecha_salida, data.tipo_reservacion, data.unidad_hospedaje_id
     )
     servicio = PublicoService(db)
-    return ejecutar_con_idempotencia(
+    resultado = ejecutar_con_idempotencia(
         db,
         request,
         endpoint="publico_crear_reservacion",
@@ -115,3 +106,20 @@ def crear_solicitud_reservacion(data: ReservacionPublicaCreate, request: Request
         ),
         schema_salida=ReservacionPublicaOut,
     )
+    AuditService(db).registrar(
+        actor=None,
+        accion="reservacion.solicitud_publica_creada",
+        entidad_tipo="reservacion",
+        entidad_id=obtener_id_entidad(resultado),
+        request=request,
+        despues=resultado,
+        contexto={
+            "tipo_reservacion": data.tipo_reservacion,
+            "fecha_llegada": data.fecha_llegada,
+            "fecha_salida": data.fecha_salida,
+            "num_personas": data.num_personas,
+            "unidad_hospedaje_id": data.unidad_hospedaje_id,
+        },
+        origen="portal_publico",
+    )
+    return resultado
