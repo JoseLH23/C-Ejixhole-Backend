@@ -154,7 +154,7 @@ jobs:
 
       - name: Adjuntar evidencias y logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-system-evidence-${{ github.run_id }}
           if-no-files-found: ignore
