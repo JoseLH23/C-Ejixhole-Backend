@@ -2,5 +2,8 @@
 useDefault = true
 
 [[allowlists]]
-description = "Workflow de recuperación reemplazado antes del merge"
-commits = ["462cd48ec6096a70e5669c45442b7daa53756a18"]
+description = "Cambios reemplazados o documentales con valores de ejemplo"
+commits = [
+  "462cd48ec6096a70e5669c45442b7daa53756a18",
+  "34a1c9dbca4994db86209b95bf1e492449a8f12e"
+]
