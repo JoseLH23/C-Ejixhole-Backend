@@ -1,12 +1,4 @@
-"""
-Rutas de Pagos. Protegidas con JWT + rol: admin y cajero únicamente.
-
-AL-01 (auditoría de seguridad 13/jul/2026): usuario_id YA NO se toma
-del body — el mismo fix que ya se hizo en reservaciones, se había
-quedado pendiente aquí. Se deriva del JWT real, no lo manda el cliente.
-
-AL-04: protegido con Idempotency-Key real contra doble clic/reintento.
-"""
+"""Rutas de Pagos. Protegidas con JWT + rol admin/cajero."""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -17,6 +9,7 @@ from app.database import get_db
 from app.dependencies import require_roles
 from app.models.usuario import Usuario
 from app.schemas.pago import PagoCreate, PagoOut
+from app.services.audit_service import AuditService, obtener_id_entidad
 from app.services.pago_service import PagoService
 
 router = APIRouter(
@@ -32,7 +25,7 @@ def registrar_pago(
     usuario_actual: Usuario = Depends(require_roles("admin", "cajero")),
 ):
     service = PagoService(db)
-    return ejecutar_con_idempotencia(
+    resultado = ejecutar_con_idempotencia(
         db,
         request,
         endpoint="registrar_pago",
@@ -48,6 +41,16 @@ def registrar_pago(
         ),
         schema_salida=PagoOut,
     )
+    AuditService(db).registrar(
+        actor=usuario_actual,
+        accion="pago.registrado",
+        entidad_tipo="pago",
+        entidad_id=obtener_id_entidad(resultado),
+        request=request,
+        despues=resultado,
+        contexto={"reservacion_id": data.reservacion_id, "monto": data.monto, "tipo": data.tipo, "metodo_pago": data.metodo_pago},
+    )
+    return resultado
 
 
 @router.get("", response_model=list[PagoOut])
@@ -59,8 +62,7 @@ def listar_pagos(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    service = PagoService(db)
-    return service.listar(
+    return PagoService(db).listar(
         reservacion_id=reservacion_id,
         tipo=tipo,
         metodo_pago=metodo_pago,
@@ -71,12 +73,9 @@ def listar_pagos(
 
 @router.get("/{pago_id}", response_model=PagoOut)
 def obtener_pago(pago_id: int, db: Session = Depends(get_db)):
-    service = PagoService(db)
-    return service.obtener_por_id(pago_id)
+    return PagoService(db).obtener_por_id(pago_id)
 
 
 @router.get("/reservacion/{reservacion_id}", response_model=list[PagoOut])
 def listar_pagos_de_reservacion(reservacion_id: int, db: Session = Depends(get_db)):
-    """Historial de pagos de una reservación específica, en orden cronológico."""
-    service = PagoService(db)
-    return service.listar_por_reservacion(reservacion_id)
+    return PagoService(db).listar_por_reservacion(reservacion_id)
