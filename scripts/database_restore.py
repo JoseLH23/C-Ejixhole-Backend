@@ -75,6 +75,8 @@ def restore_backup(
     subprocess.run(
         [
             "pg_restore",
+            "--dbname",
+            database,
             "--clean",
             "--if-exists",
             "--no-owner",
