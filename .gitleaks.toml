@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Workflow de recuperación reemplazado antes del merge"
+commits = ["462cd48ec6096a70e5669c45442b7daa53756a18"]
