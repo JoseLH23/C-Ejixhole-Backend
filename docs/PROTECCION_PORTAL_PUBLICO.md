@@ -3,11 +3,12 @@
 ## Controles implementados
 
 - honeypot invisible y fuera del flujo accesible;
-- desafío firmado con expiración y tiempo mínimo;
+- desafío firmado con expiración, tiempo mínimo y nonce de un solo uso;
 - límites separados para consultas, desafíos y envíos;
 - límites durables por IP, contacto e identificador efímero de pestaña;
+- bloqueo transaccional en PostgreSQL para cuotas concurrentes;
 - seudonimización HMAC: no se guardan IP, correo ni teléfono en la tabla antiabuso;
-- `Retry-After` en bloqueos temporales;
+- `Retry-After` calculado con la ventana real del límite;
 - auditoría de detecciones sin datos personales;
 - compatibilidad con `Idempotency-Key` para reintentos seguros.
 
