@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.session_config import AUTH_SESSION_MAX_PER_USER, AUTH_SESSION_TOUCH_MINUTES
 from app.models.auth_session import AuthSession
+from app.models.usuario import Usuario
 
 
 class AuthSessionRepository:
@@ -18,33 +19,48 @@ class AuthSessionRepository:
         issued_at: datetime,
         expires_at: datetime,
     ) -> AuthSession:
-        session = AuthSession(
-            jti=jti,
-            usuario_id=usuario_id,
-            issued_at=issued_at,
-            expires_at=expires_at,
-            last_seen_at=issued_at,
-        )
-        self.db.add(session)
-        self.db.flush()
-
-        activas = (
-            self.db.query(AuthSession)
-            .filter(
-                AuthSession.usuario_id == usuario_id,
-                AuthSession.revoked_at.is_(None),
-                AuthSession.expires_at > issued_at,
+        try:
+            # PostgreSQL serializa los logins del mismo usuario. Así dos
+            # transacciones concurrentes no pueden superar el límite activo.
+            usuario = (
+                self.db.query(Usuario)
+                .filter(Usuario.id == usuario_id)
+                .with_for_update()
+                .one_or_none()
             )
-            .order_by(AuthSession.issued_at.desc(), AuthSession.id.desc())
-            .all()
-        )
-        for anterior in activas[AUTH_SESSION_MAX_PER_USER:]:
-            anterior.revoked_at = issued_at
-            anterior.revoke_reason = "session_limit"
+            if usuario is None:
+                raise ValueError("El usuario de la sesión no existe")
 
-        self.db.commit()
-        self.db.refresh(session)
-        return session
+            session = AuthSession(
+                jti=jti,
+                usuario_id=usuario_id,
+                issued_at=issued_at,
+                expires_at=expires_at,
+                last_seen_at=issued_at,
+            )
+            self.db.add(session)
+            self.db.flush()
+
+            activas = (
+                self.db.query(AuthSession)
+                .filter(
+                    AuthSession.usuario_id == usuario_id,
+                    AuthSession.revoked_at.is_(None),
+                    AuthSession.expires_at > issued_at,
+                )
+                .order_by(AuthSession.issued_at.desc(), AuthSession.id.desc())
+                .all()
+            )
+            for anterior in activas[AUTH_SESSION_MAX_PER_USER:]:
+                anterior.revoked_at = issued_at
+                anterior.revoke_reason = "session_limit"
+
+            self.db.commit()
+            self.db.refresh(session)
+            return session
+        except Exception:
+            self.db.rollback()
+            raise
 
     def obtener_vigente(self, jti: str, *, ahora: datetime | None = None) -> AuthSession | None:
         ahora = ahora or datetime.now(timezone.utc)
