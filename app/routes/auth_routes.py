@@ -54,7 +54,7 @@ def login(data: LoginRequest, request: Request, response: Response, db: Session 
         request=request,
         despues={"expires_at": result.expires_at, "estado": "activa"},
     )
-    return Token(access_token=result.access_token)
+    return Token(access_token=result.access_token, session_managed=True)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
