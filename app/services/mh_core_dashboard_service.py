@@ -22,8 +22,9 @@ class MhCoreDashboardService:
     def _request(self, method: str, path: str, *, params: dict[str, object], required_key: str) -> dict:
         if not self.api_key:
             raise HTTPException(status_code=503, detail="La integración con MH-Core todavía no está configurada.")
+        query = f"?{urlencode(params)}" if params else ""
         request = Request(
-            f"{self.base_url}{path}?{urlencode(params)}",
+            f"{self.base_url}{path}{query}",
             headers={"X-API-Key": self.api_key, "Accept": "application/json"},
             method=method,
         )
@@ -57,6 +58,9 @@ class MhCoreDashboardService:
 
     def obtener_ingresos_por_servicio(self, *, days: int = 30) -> dict:
         return self._get("/integrations/ejixhole/profitability", params={"days": days}, required_key="services")
+
+    def obtener_observabilidad(self) -> dict:
+        return self._get("/observability/summary", params={}, required_key="status")
 
     @staticmethod
     def _recommendation_path(code: str, suffix: str) -> str:
