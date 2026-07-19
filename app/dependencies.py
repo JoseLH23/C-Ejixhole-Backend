@@ -1,7 +1,4 @@
-"""
-Dependencias de autenticación. Las rutas privadas validan firma JWT, emisor,
-audiencia y una sesión persistida que puede revocarse inmediatamente.
-"""
+"""Dependencias de autenticación para las rutas privadas."""
 from hmac import compare_digest
 
 from fastapi import Depends, HTTPException, Request, status
@@ -30,34 +27,21 @@ def _credenciales_invalidas() -> HTTPException:
 def _token_de_request(request: Request, bearer_token: str | None) -> str:
     if bearer_token:
         return bearer_token
-
     cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME)
     if not cookie_token:
         raise _credenciales_invalidas()
-
     if request.method.upper() not in _METODOS_SEGUROS:
         csrf_cookie = request.cookies.get(settings.CSRF_COOKIE_NAME)
         csrf_header = request.headers.get("X-CSRF-Token")
-        if (
-            not csrf_cookie
-            or not csrf_header
-            or not compare_digest(csrf_cookie, csrf_header)
-        ):
+        if not csrf_cookie or not csrf_header or not compare_digest(csrf_cookie, csrf_header):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validación CSRF inválida o ausente.",
             )
-
     return cookie_token
 
 
 def _usuario_legacy_de_prueba(db: Session, email: str) -> Usuario | None:
-    """Compatibilidad exclusiva para fixtures antiguos con SQLite.
-
-    Producción opera con PostgreSQL y siempre exige una fila en auth_sessions.
-    Esta salida temporal evita reescribir decenas de fixtures históricos que
-    fabrican JWT directamente, sin debilitar el comportamiento productivo.
-    """
     bind = db.get_bind()
     if bind.dialect.name != "sqlite":
         return None
@@ -71,7 +55,6 @@ def get_current_user(
 ) -> Usuario:
     credentials_exception = _credenciales_invalidas()
     token = _token_de_request(request, token_bearer)
-
     try:
         payload = decode_access_token(token)
         email = payload.get("sub")
@@ -87,12 +70,12 @@ def get_current_user(
         usuario_legacy = _usuario_legacy_de_prueba(db, email)
         if usuario_legacy is None:
             raise credentials_exception
+        request.state.auth_legacy_test_session = True
         return usuario_legacy
 
     usuario = auth_session.usuario
     if usuario is None or not usuario.activo or usuario.email != email:
         raise credentials_exception
-
     request.state.auth_session_id = auth_session.id
     request.state.auth_jti = jti
     session_repo.tocar(auth_session)
@@ -107,5 +90,4 @@ def require_roles(*roles_permitidos: str):
                 detail=f"Este rol ({usuario.rol.nombre}) no tiene permiso para esta acción.",
             )
         return usuario
-
     return checker
