@@ -43,15 +43,38 @@ def _borrar_sesion(response: Response) -> None:
 
 
 @router.post("/login", response_model=Token, dependencies=[Depends(limitar_login)])
-def login(data: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    service = AuthService(db)
-    token = service.autenticar(data.email, data.password)
-    _guardar_sesion(response, token)
-    return Token(access_token=token)
+def login(data: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    result = AuthService(db).crear_sesion(data.email, data.password)
+    _guardar_sesion(response, result.access_token)
+    AuditService(db).registrar(
+        actor=result.usuario,
+        accion="auth.login",
+        entidad_tipo="auth_session",
+        entidad_id=result.session_id,
+        request=request,
+        despues={"expires_at": result.expires_at, "estado": "activa"},
+    )
+    return Token(access_token=result.access_token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(response: Response, _usuario: Usuario = Depends(get_current_user)):
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_current_user),
+):
+    session_id = getattr(request.state, "auth_session_id", None)
+    if session_id is not None:
+        AuthService(db).revocar_sesion(session_id, reason="logout")
+        AuditService(db).registrar(
+            actor=usuario,
+            accion="auth.logout",
+            entidad_tipo="auth_session",
+            entidad_id=session_id,
+            request=request,
+            despues={"estado": "revocada"},
+        )
     _borrar_sesion(response)
     return None
 
