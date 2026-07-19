@@ -26,6 +26,7 @@ def upgrade() -> None:
         sa.Column("reason", sa.String(length=50), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("nonce_hash", name="uq_public_submission_attempt_nonce"),
     )
     op.create_index("ix_public_submission_attempts_ip_hash", "public_submission_attempts", ["ip_hash"])
     op.create_index("ix_public_submission_attempts_contact_hash", "public_submission_attempts", ["contact_hash"])
