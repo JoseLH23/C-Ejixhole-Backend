@@ -1,1 +1,20 @@
-{"schema_version":1,"component":"ejixhole-backend","version":"0.1.0","ecosystem_release":"2026.07"}
+{
+  "schema_version": 1,
+  "component": "ejixhole-backend",
+  "version": "0.1.0",
+  "ecosystem_release": "2026.07",
+  "runtime": "python-3.11",
+  "produces": [
+    "ejixhole.api.v1",
+    "ejixhole.public-api.v1",
+    "ejixhole.events.v1",
+    "ejixhole.observability.v1"
+  ],
+  "requires": ["mh-core.observability.v1"],
+  "database": {
+    "engine": "postgresql",
+    "migration_tool": "alembic",
+    "rollback_policy": "backward-compatible-schema-first"
+  },
+  "release_tag_prefix": "v"
+}
