@@ -37,6 +37,7 @@ app.add_middleware(
         "Content-Type",
         "Idempotency-Key",
         "X-CSRF-Token",
+        "X-Public-Client",
     ],
     expose_headers=[
         "X-API-Version",
