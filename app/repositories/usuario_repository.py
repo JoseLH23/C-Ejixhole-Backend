@@ -44,26 +44,32 @@ class UsuarioRepository:
             .count()
         )
 
-    def desactivar(self, usuario: Usuario) -> Usuario:
+    def _guardar(self, usuario: Usuario, *, commit: bool) -> Usuario:
+        if commit:
+            self.db.commit()
+            self.db.refresh(usuario)
+        else:
+            self.db.flush()
+        return usuario
+
+    def desactivar(self, usuario: Usuario, *, commit: bool = True) -> Usuario:
         usuario.activo = False
-        self.db.commit()
-        self.db.refresh(usuario)
-        return usuario
+        return self._guardar(usuario, commit=commit)
 
-    def reactivar(self, usuario: Usuario) -> Usuario:
+    def reactivar(self, usuario: Usuario, *, commit: bool = True) -> Usuario:
         usuario.activo = True
-        self.db.commit()
-        self.db.refresh(usuario)
-        return usuario
+        return self._guardar(usuario, commit=commit)
 
-    def actualizar_rol(self, usuario: Usuario, rol_id: int) -> Usuario:
+    def actualizar_rol(self, usuario: Usuario, rol_id: int, *, commit: bool = True) -> Usuario:
         usuario.rol_id = rol_id
-        self.db.commit()
-        self.db.refresh(usuario)
-        return usuario
+        return self._guardar(usuario, commit=commit)
 
-    def actualizar_password(self, usuario: Usuario, password_hash: str) -> Usuario:
+    def actualizar_password(
+        self,
+        usuario: Usuario,
+        password_hash: str,
+        *,
+        commit: bool = True,
+    ) -> Usuario:
         usuario.password_hash = password_hash
-        self.db.commit()
-        self.db.refresh(usuario)
-        return usuario
+        return self._guardar(usuario, commit=commit)
