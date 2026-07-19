@@ -201,6 +201,46 @@ def test_email_invalido_es_rechazado(client, catalogo):
     assert response.status_code == 422
 
 
+def test_honeypot_rechaza_bots_sin_crear_reservacion(client, catalogo, db_session):
+    from app.models.reservacion import Reservacion
+
+    response = client.post(
+        "/publico/reservaciones",
+        json=_payload(website="https://spam.example"),
+    )
+
+    assert response.status_code == 400
+    assert db_session.query(Reservacion).count() == 0
+
+
+def test_reintento_idempotente_no_consume_cuota_de_contacto(client, catalogo):
+    headers = {"Idempotency-Key": "portal-reintento-legitimo"}
+    payload = _payload()
+
+    primera = client.post("/publico/reservaciones", json=payload, headers=headers)
+    repetida = client.post("/publico/reservaciones", json=payload, headers=headers)
+    segunda_real = client.post(
+        "/publico/reservaciones",
+        json=_payload(fecha_llegada="2026-08-16", fecha_salida="2026-08-16"),
+    )
+    tercera_real = client.post(
+        "/publico/reservaciones",
+        json=_payload(fecha_llegada="2026-08-17", fecha_salida="2026-08-17"),
+    )
+    cuarta_real = client.post(
+        "/publico/reservaciones",
+        json=_payload(fecha_llegada="2026-08-18", fecha_salida="2026-08-18"),
+    )
+
+    assert primera.status_code == 201
+    assert repetida.status_code == 201
+    assert repetida.json()["id"] == primera.json()["id"]
+    assert segunda_real.status_code == 201
+    assert tercera_real.status_code == 201
+    assert cuarta_real.status_code == 429
+    assert int(cuarta_real.headers["Retry-After"]) > 0
+
+
 def test_crea_la_reservacion_aunque_smtp_no_este_configurado(client, catalogo):
     """Confirma la degradación diseñada: sin SMTP, la reservación se crea igual."""
     response = client.post("/publico/reservaciones", json=_payload())
