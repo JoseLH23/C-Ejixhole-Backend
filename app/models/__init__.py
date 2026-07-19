@@ -1,5 +1,6 @@
 """Importa modelos para registrar metadata SQLAlchemy."""
 from app.models.usuario import Rol, Usuario  # noqa: F401
+from app.models.auth_session import AuthSession  # noqa: F401
 from app.models.cliente import Cliente  # noqa: F401
 from app.models.servicio import Servicio  # noqa: F401
 from app.models.reservacion import Reservacion  # noqa: F401
