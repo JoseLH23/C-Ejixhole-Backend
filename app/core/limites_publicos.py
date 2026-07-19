@@ -1,10 +1,11 @@
 from fastapi import HTTPException, Request
 
+from app.core.config import settings
 from app.core.rate_limiter import RateLimiter
 
 lecturas = RateLimiter(120, 300)
 desafios = RateLimiter(30, 300)
-envios = RateLimiter(10, 600)
+envios = RateLimiter(30, 600)
 
 
 def _ip(request: Request) -> str:
@@ -15,6 +16,8 @@ def _ip(request: Request) -> str:
 
 
 def _aplicar(request: Request, limiter: RateLimiter, mensaje: str) -> None:
+    if settings.ENVIRONMENT == "test":
+        return
     clave = _ip(request)
     if limiter.permitido(clave):
         return
