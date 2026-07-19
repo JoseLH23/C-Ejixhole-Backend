@@ -40,21 +40,26 @@ def request_publico(*, client_id="browser-test", forwarded="198.51.100.40") -> R
             "client": ("127.0.0.1", 1234),
         }
     )
-    request.state.request_id = "request-test"
+    request.state.request_id = f"request-{client_id}-{forwarded}"
     return request
 
 
-def datos(token=None, website=""):
+def datos(token=None, website="", email="persona@example.test"):
     return SimpleNamespace(
-        email="persona@example.test",
+        email=email,
         telefono="4440000000",
         form_challenge=token,
         website=website,
     )
 
 
+def configurar(monkeypatch, *, mode="monitor", min_seconds=0):
+    monkeypatch.setattr("app.services.formulario_publico_service.PUBLIC_ANTI_ABUSE_MODE", mode)
+    monkeypatch.setattr("app.core.form_challenge.PUBLIC_CHALLENGE_MIN_SECONDS", min_seconds)
+
+
 def test_desafio_valido_registra_solo_seudonimos(db, monkeypatch):
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_CHALLENGE_MIN_SECONDS", 0)
+    configurar(monkeypatch)
     service = PublicFormGuardService(db)
     challenge = service.create_challenge()
 
@@ -70,8 +75,7 @@ def test_desafio_valido_registra_solo_seudonimos(db, monkeypatch):
 
 
 def test_honeypot_bloquea_en_modo_enforce_y_audita(db, monkeypatch):
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_ANTI_ABUSE_MODE", "enforce")
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_CHALLENGE_MIN_SECONDS", 0)
+    configurar(monkeypatch, mode="enforce")
     service = PublicFormGuardService(db)
     challenge = service.create_challenge()
 
@@ -88,7 +92,7 @@ def test_honeypot_bloquea_en_modo_enforce_y_audita(db, monkeypatch):
 
 
 def test_modo_monitor_no_interrumpe_cliente_anterior_sin_desafio(db, monkeypatch):
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_ANTI_ABUSE_MODE", "monitor")
+    configurar(monkeypatch, mode="monitor")
     PublicFormGuardService(db).validate_and_record(request_publico(), datos())
 
     attempt = db.query(PublicSubmissionAttempt).one()
@@ -96,10 +100,40 @@ def test_modo_monitor_no_interrumpe_cliente_anterior_sin_desafio(db, monkeypatch
     assert attempt.reason == "challenge_missing"
 
 
-def test_limite_ip_es_durable_y_devuelve_retry_after(db, monkeypatch):
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_ANTI_ABUSE_MODE", "enforce")
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_CHALLENGE_MIN_SECONDS", 0)
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_IP_HOURLY_LIMIT", 1)
+def test_nonce_no_puede_reutilizarse_en_modo_enforce(db, monkeypatch):
+    configurar(monkeypatch, mode="enforce")
+    service = PublicFormGuardService(db)
+    challenge = service.create_challenge()
+    service.validate_and_record(request_publico(), datos(challenge["token"]))
+
+    with pytest.raises(HTTPException) as exc:
+        service.validate_and_record(
+            request_publico(client_id="otro-browser", forwarded="203.0.113.90"),
+            datos(challenge["token"], email="otra@example.test"),
+        )
+
+    assert exc.value.status_code == 400
+    assert db.query(PublicSubmissionAttempt).filter(
+        PublicSubmissionAttempt.reason == "challenge_reused"
+    ).count() == 1
+
+
+def test_liberar_intento_permite_reintento_si_falla_el_negocio(db, monkeypatch):
+    configurar(monkeypatch, mode="enforce")
+    service = PublicFormGuardService(db)
+    challenge = service.create_challenge()
+    attempt = service.validate_and_record(request_publico(), datos(challenge["token"]))
+
+    service.release(attempt)
+    assert db.query(PublicSubmissionAttempt).count() == 0
+
+    service.validate_and_record(request_publico(), datos(challenge["token"]))
+    assert db.query(PublicSubmissionAttempt).count() == 1
+
+
+def test_limite_ip_es_durable_y_devuelve_ventana_real(db, monkeypatch):
+    configurar(monkeypatch, mode="enforce")
+    monkeypatch.setattr("app.repositories.public_attempt_repository.PUBLIC_IP_HOURLY_LIMIT", 1)
     service = PublicFormGuardService(db)
 
     first = service.create_challenge()
@@ -107,14 +141,18 @@ def test_limite_ip_es_durable_y_devuelve_retry_after(db, monkeypatch):
 
     second = service.create_challenge()
     with pytest.raises(HTTPException) as exc:
-        service.validate_and_record(request_publico(), datos(second["token"]))
+        service.validate_and_record(
+            request_publico(client_id="second-browser"),
+            datos(second["token"], email="second@example.test"),
+        )
 
     assert exc.value.status_code == 429
-    assert exc.value.headers["Retry-After"] == "60"
+    retry_after = int(exc.value.headers["Retry-After"])
+    assert 3500 <= retry_after <= 3600
 
 
 def test_se_usa_ultima_ip_del_proxy(db, monkeypatch):
-    monkeypatch.setattr("app.services.public_form_guard_service.PUBLIC_CHALLENGE_MIN_SECONDS", 0)
+    configurar(monkeypatch)
     service = PublicFormGuardService(db)
     challenge = service.create_challenge()
     request = request_publico(forwarded="203.0.113.25")
