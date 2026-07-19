@@ -15,15 +15,23 @@ class SloTargets:
     latency_p95_ms: int = 1000
 
 
+@dataclass(frozen=True)
+class HttpSample:
+    status_code: int
+    duration_ms: int
+    finished_at: datetime
+
+
 class HttpMetricsRegistry:
     def __init__(self, *, sample_limit: int = 5000) -> None:
+        if sample_limit < 1:
+            raise ValueError("sample_limit debe ser mayor que cero")
         self._lock = Lock()
         self._started_monotonic = time.monotonic()
         self._started_at = datetime.now(timezone.utc)
-        self._requests = 0
+        self._requests_lifetime = 0
         self._active = 0
-        self._status_groups: Counter[str] = Counter()
-        self._durations_ms: deque[int] = deque(maxlen=sample_limit)
+        self._samples: deque[HttpSample] = deque(maxlen=sample_limit)
         self._last_server_error_at: datetime | None = None
 
     def begin(self) -> None:
@@ -31,14 +39,19 @@ class HttpMetricsRegistry:
             self._active += 1
 
     def finish(self, status_code: int, duration_ms: int) -> None:
-        group = f"{max(1, min(5, status_code // 100))}xx"
+        finished_at = datetime.now(timezone.utc)
         with self._lock:
             self._active = max(0, self._active - 1)
-            self._requests += 1
-            self._status_groups[group] += 1
-            self._durations_ms.append(max(0, duration_ms))
+            self._requests_lifetime += 1
+            self._samples.append(
+                HttpSample(
+                    status_code=status_code,
+                    duration_ms=max(0, duration_ms),
+                    finished_at=finished_at,
+                )
+            )
             if status_code >= 500:
-                self._last_server_error_at = datetime.now(timezone.utc)
+                self._last_server_error_at = finished_at
 
     @staticmethod
     def _percentile(values: list[int], percentile: float) -> int:
@@ -51,9 +64,13 @@ class HttpMetricsRegistry:
     def snapshot(self, targets: SloTargets | None = None) -> dict:
         selected = targets or SloTargets()
         with self._lock:
-            total = self._requests
-            server_errors = self._status_groups.get("5xx", 0)
-            durations = list(self._durations_ms)
+            samples = list(self._samples)
+            status_groups: Counter[str] = Counter(
+                f"{max(1, min(5, sample.status_code // 100))}xx" for sample in samples
+            )
+            durations = [sample.duration_ms for sample in samples]
+            total = len(samples)
+            server_errors = status_groups.get("5xx", 0)
             availability = ((total - server_errors) / total * 100) if total else 100.0
             error_rate = (server_errors / total * 100) if total else 0.0
             p50 = self._percentile(durations, 0.50)
@@ -65,22 +82,30 @@ class HttpMetricsRegistry:
             }
             return {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "started_at": self._started_at.isoformat(),
+                "process_started_at": self._started_at.isoformat(),
                 "uptime_seconds": int(time.monotonic() - self._started_monotonic),
+                "window": {
+                    "sample_limit": self._samples.maxlen,
+                    "samples": total,
+                    "started_at": samples[0].finished_at.isoformat() if samples else None,
+                    "ended_at": samples[-1].finished_at.isoformat() if samples else None,
+                },
                 "requests": {
                     "total": total,
+                    "lifetime_total": self._requests_lifetime,
                     "active": self._active,
-                    "by_status_group": dict(self._status_groups),
+                    "by_status_group": dict(status_groups),
                     "server_errors": server_errors,
                 },
                 "latency_ms": {
-                    "samples": len(durations),
+                    "samples": total,
                     "p50": p50,
                     "p95": p95,
                     "max": max(durations) if durations else 0,
                 },
                 "slo": {
                     "status": "healthy" if all(checks.values()) else "degraded",
+                    "measurement": "rolling_request_window",
                     "availability_percent": round(availability, 3),
                     "error_rate_percent": round(error_rate, 3),
                     "targets": {
