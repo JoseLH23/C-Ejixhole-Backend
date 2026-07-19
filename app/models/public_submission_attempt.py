@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, UniqueConstraint, func
 
 from app.database import Base
 
@@ -6,6 +6,7 @@ from app.database import Base
 class PublicSubmissionAttempt(Base):
     __tablename__ = "public_submission_attempts"
     __table_args__ = (
+        UniqueConstraint("nonce_hash", name="uq_public_submission_attempt_nonce"),
         Index("ix_public_attempt_ip_created", "ip_hash", "created_at"),
         Index("ix_public_attempt_contact_created", "contact_hash", "created_at"),
         Index("ix_public_attempt_client_created", "client_hash", "created_at"),
