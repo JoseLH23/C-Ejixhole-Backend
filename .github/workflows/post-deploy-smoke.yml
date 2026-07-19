@@ -1,0 +1,51 @@
+name: Smoke - Backend desplegado
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: URL HTTPS del backend sin barra final
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exigir HTTPS
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          case "$BASE_URL" in
+            https://*) ;;
+            *) echo "La URL debe usar HTTPS"; exit 1 ;;
+          esac
+      - name: Comprobar liveness, readiness y versión
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-all-errors "$BASE_URL/health/live" > live.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors "$BASE_URL/health/ready" > ready.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors "$BASE_URL/status" > status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('release-manifest.json').read_text())
+          live = json.loads(Path('live.json').read_text())
+          ready = json.loads(Path('ready.json').read_text())
+          status = json.loads(Path('status.json').read_text())
+          assert live.get('status') == 'alive'
+          assert ready.get('status') == 'ready'
+          assert status.get('version') == manifest['version']
+          assert status.get('api_version') == 'v1'
+          print('Smoke backend correcto')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backend-smoke-${{ github.run_id }}
+          path: "*.json"
+          retention-days: 30
