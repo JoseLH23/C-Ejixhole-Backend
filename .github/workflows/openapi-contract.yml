@@ -3,16 +3,8 @@ name: Contract - OpenAPI and TypeScript
 on:
   push:
     branches: [main]
-    paths:
-      - "app/**"
-      - "contracts/**"
-      - ".github/workflows/openapi-contract.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "app/**"
-      - "contracts/**"
-      - ".github/workflows/openapi-contract.yml"
   workflow_dispatch:
 
 permissions:
