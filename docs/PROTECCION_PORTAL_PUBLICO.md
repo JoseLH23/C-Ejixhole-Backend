@@ -14,6 +14,8 @@
 
 ## Despliegue gradual
 
+El backend debe desplegarse primero con `PUBLIC_ANTI_ABUSE_MODE=monitor`. Después se despliega el portal actualizado. Este orden conserva compatibilidad con clientes anteriores y permite observar las señales antes de bloquearlas.
+
 `PUBLIC_ANTI_ABUSE_MODE=monitor` es el valor inicial. Detecta y registra señales, pero no interrumpe solicitudes antiguas mientras se despliega el portal actualizado.
 
 Después de revisar la telemetría, cambiar a:
