@@ -51,6 +51,14 @@ class CotizacionOut(BaseModel):
     desglose: list[ConceptoPrecio]
 
 
+class FormChallengeOut(BaseModel):
+    token: str
+    issued_at: datetime
+    expires_at: datetime
+    minimum_wait_seconds: int
+    enforcement_mode: Literal["monitor", "enforce"]
+
+
 class ReservacionPublicaCreate(BaseModel):
     nombre_completo: str = Field(..., min_length=2, max_length=150)
     email: EmailStr
@@ -62,6 +70,7 @@ class ReservacionPublicaCreate(BaseModel):
     unidad_hospedaje_id: Optional[int] = None
     notas: Optional[str] = Field(default=None, max_length=1000)
     website: str = Field(default="", max_length=200, exclude=True)
+    form_challenge: Optional[str] = Field(default=None, max_length=1000, exclude=True)
 
     @field_validator("nombre_completo")
     @classmethod
