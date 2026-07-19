@@ -1,0 +1,113 @@
+name: Contract - OpenAPI and TypeScript
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "contracts/**"
+      - ".github/workflows/openapi-contract.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "contracts/**"
+      - ".github/workflows/openapi-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Generar contrato desde FastAPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ENVIRONMENT: test
+      JWT_SECRET_KEY: contract-validation-${{ github.run_id }}-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      DATABASE_URL: sqlite+pysqlite:///:memory:
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Exportar y validar OpenAPI
+        run: |
+          mkdir -p contract-output
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from app.main import app
+
+          schema = app.openapi()
+          schema.setdefault("info", {})["x-api-line"] = "v1"
+          schema["info"]["x-typescript-generator"] = "openapi-typescript@7.8.0"
+          methods = {"get", "post", "put", "patch", "delete", "options", "head"}
+          infrastructure = {"/", "/status", "/health", "/health/ready"}
+          operation_ids = set()
+          errors = []
+          for path, path_item in schema.get("paths", {}).items():
+              for method, operation in path_item.items():
+                  if method.lower() not in methods or not isinstance(operation, dict):
+                      continue
+                  operation_id = operation.get("operationId")
+                  if not operation_id:
+                      errors.append(f"{method.upper()} {path} sin operationId")
+                  elif operation_id in operation_ids:
+                      errors.append(f"operationId duplicado: {operation_id}")
+                  else:
+                      operation_ids.add(operation_id)
+                  if not operation.get("responses"):
+                      errors.append(f"{method.upper()} {path} sin respuestas")
+                  if not path.startswith("/api/v1") and path not in infrastructure and not operation.get("deprecated"):
+                      errors.append(f"Ruta no versionada: {method.upper()} {path}")
+          if schema.get("openapi") != "3.1.0":
+              errors.append("Se requiere OpenAPI 3.1.0")
+          if not schema.get("components", {}).get("schemas"):
+              errors.append("No existen schemas reutilizables")
+          if errors:
+              raise SystemExit("Contrato inválido:\n- " + "\n- ".join(errors))
+          text = json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+          digest = hashlib.sha256(text.encode()).hexdigest()
+          Path("contract-output/openapi-v1.json").write_text(text, encoding="utf-8")
+          manifest = {
+              "schema_version": 1,
+              "api_line": "v1",
+              "application_version": schema["info"].get("version"),
+              "openapi_version": schema.get("openapi"),
+              "openapi_sha256": digest,
+              "paths": len(schema.get("paths", {})),
+              "schemas": len(schema.get("components", {}).get("schemas", {})),
+              "typescript_generator": "openapi-typescript@7.8.0",
+          }
+          Path("contract-output/openapi-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(manifest)
+          PY
+
+      - name: Generar tipos TypeScript
+        run: npx --yes openapi-typescript@7.8.0 contract-output/openapi-v1.json -o contract-output/ejixhole-api.ts
+
+      - name: Generar evidencia de integridad
+        run: sha256sum contract-output/* > contract-output/SHA256SUMS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ejixhole-api-contract-${{ github.sha }}
+          path: contract-output/
+          retention-days: 90
