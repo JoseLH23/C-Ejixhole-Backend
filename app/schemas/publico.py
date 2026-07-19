@@ -61,6 +61,7 @@ class ReservacionPublicaCreate(BaseModel):
     num_personas: int = Field(..., gt=0, le=50)
     unidad_hospedaje_id: Optional[int] = None
     notas: Optional[str] = Field(default=None, max_length=1000)
+    website: str = Field(default="", max_length=200, exclude=True)
 
     @field_validator("nombre_completo")
     @classmethod
