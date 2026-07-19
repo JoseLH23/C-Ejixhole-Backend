@@ -73,6 +73,12 @@ def test_resumen_sigue_disponible_si_postgresql_falla(monkeypatch):
     assert payload["dependencies"]["database"]["status"] == "down"
 
 
+def test_ruta_mh_core_hereda_dashboard_administrativo():
+    paths = set(app.openapi()["paths"])
+    assert "/api/v1/dashboard/mh-core/observability" in paths
+    assert "/dashboard/mh-core/observability" in paths
+
+
 def test_observabilidad_no_se_publica_en_rutas_legacy():
     paths = set(app.openapi()["paths"])
     assert "/api/v1/observabilidad/resumen" in paths
