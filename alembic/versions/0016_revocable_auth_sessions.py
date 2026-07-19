@@ -26,7 +26,6 @@ def upgrade() -> None:
         sa.Column("revoke_reason", sa.String(length=120), nullable=True),
         sa.ForeignKeyConstraint(["usuario_id"], ["usuarios.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("jti", name="uq_auth_sessions_jti"),
     )
     op.create_index("ix_auth_sessions_jti", "auth_sessions", ["jti"], unique=True)
     op.create_index("ix_auth_sessions_usuario_id", "auth_sessions", ["usuario_id"], unique=False)
