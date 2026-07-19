@@ -1,0 +1,47 @@
+name: Release - Backend
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      ENVIRONMENT: test
+      JWT_SECRET_KEY: release-validation-key-with-more-than-thirty-two-characters
+      DATABASE_URL: postgresql+psycopg2://user:password@localhost:5432/validation
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Validar manifiesto y etiqueta
+        run: python scripts/validate_release.py
+      - name: Ejecutar pruebas
+        run: pytest -q
+      - name: Validar grafo de migraciones
+        run: alembic heads
+      - name: Generar evidencia
+        run: |
+          mkdir -p release-evidence
+          python scripts/validate_release.py --evidence release-evidence/backend.json
+          sha256sum release-evidence/backend.json > release-evidence/SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backend-release-evidence-${{ github.ref_name }}
+          path: release-evidence/
+          retention-days: 90
+      - name: Crear GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release-evidence/* --verify-tag --generate-notes --title "EjiXhole Backend ${GITHUB_REF_NAME}"
