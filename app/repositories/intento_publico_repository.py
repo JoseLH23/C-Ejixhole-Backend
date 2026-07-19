@@ -103,6 +103,12 @@ class IntentoPublicoRepository:
             self.db.commit()
         except IntegrityError:
             self.db.rollback()
+            nonce_ya_usado = bool(
+                nonce_hash
+                and self.db.query(IntentoPublico).filter(IntentoPublico.nonce_hash == nonce_hash).first()
+            )
+            if not nonce_ya_usado:
+                raise
             motivo = "challenge_reused"
             permitido = modo == "monitor"
             intento = IntentoPublico(
