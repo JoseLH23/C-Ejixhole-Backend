@@ -18,6 +18,7 @@ Los fixtures históricos que fabrican JWT directamente solo se aceptan cuando la
 2. Conservar `JWT_SECRET_KEY` fuera del repositorio.
 3. Mantener estables `JWT_ISSUER` y `JWT_AUDIENCE` durante una versión desplegada.
 4. Tras rotar la clave JWT, todas las sesiones anteriores quedan inválidas automáticamente.
+5. Verificar en el smoke posterior al despliegue que login y logout funcionan y que un token revocado es rechazado.
 
 ## Respuesta a incidentes
 
