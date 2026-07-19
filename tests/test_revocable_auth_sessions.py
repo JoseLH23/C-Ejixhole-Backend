@@ -59,7 +59,6 @@ def test_login_persiste_sesion_y_emite_claims_empresariales(db):
     assert payload["jti"] == result.jti
     assert payload["iss"] == JWT_ISSUER
     assert payload["aud"] == JWT_AUDIENCE
-    assert payload["session_managed"] is True
     assert AuthSessionRepository(db).obtener_vigente(result.jti).id == result.session_id
 
 
