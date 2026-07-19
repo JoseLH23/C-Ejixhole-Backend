@@ -13,3 +13,4 @@ from app.models.evento_calendario import EventoCalendario  # noqa: F401
 from app.models.tarifa_especial import TarifaEspecial  # noqa: F401
 from app.models.outbox_event import OutboxEvent  # noqa: F401
 from app.models.audit_event import AuditEvent  # noqa: F401
+from app.models.public_submission_attempt import PublicSubmissionAttempt  # noqa: F401
