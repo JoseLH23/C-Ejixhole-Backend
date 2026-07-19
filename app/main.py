@@ -37,6 +37,7 @@ app.add_middleware(
         "Content-Type",
         "Idempotency-Key",
         "X-CSRF-Token",
+        "X-Public-Client",
     ],
     expose_headers=[
         "X-API-Version",
@@ -46,14 +47,8 @@ app.add_middleware(
     ],
 )
 
-# Infraestructura: no forma parte del contrato versionado de negocio.
 app.include_router(health_routes.router)
-
-# Contrato estable para panel, portal, MH-Core y futuras aplicaciones.
 app.include_router(api_v1_router)
-
-# Compatibilidad temporal. Estas rutas aparecen como deprecadas en OpenAPI y
-# devuelven cabeceras que señalan su equivalente bajo /api/v1.
 app.include_router(legacy_router)
 
 
