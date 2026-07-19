@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from jose import JWTClaimsError, jwt
+from jose import jwt
+from jose.exceptions import JWTClaimsError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -58,6 +59,7 @@ def test_login_persiste_sesion_y_emite_claims_empresariales(db):
     assert payload["jti"] == result.jti
     assert payload["iss"] == JWT_ISSUER
     assert payload["aud"] == JWT_AUDIENCE
+    assert payload["session_managed"] is True
     assert AuthSessionRepository(db).obtener_vigente(result.jti).id == result.session_id
 
 
