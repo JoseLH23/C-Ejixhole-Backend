@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -88,6 +89,20 @@ def test_honeypot_bloquea_y_audita_sin_pii(db, monkeypatch):
     assert "persona@example.test" not in repr(audit.contexto)
 
 
+def test_honeypot_tambien_bloquea_en_monitor(db, monkeypatch):
+    configurar(monkeypatch, modo="monitor")
+    service = FormularioGuardService(db)
+    challenge = service.crear_desafio()
+
+    with pytest.raises(HTTPException) as error:
+        service.reservar(request_publico(), datos(challenge["token"], website="bot-value"))
+
+    assert error.value.status_code == 400
+    intento = db.query(IntentoPublico).one()
+    assert intento.allowed is False
+    assert intento.reason == "honeypot_filled"
+
+
 def test_monitor_conserva_compatibilidad_sin_desafio(db, monkeypatch):
     configurar(monkeypatch, modo="monitor")
     FormularioGuardService(db).reservar(request_publico(), datos())
@@ -110,6 +125,26 @@ def test_nonce_es_de_un_solo_uso(db, monkeypatch):
 
     assert error.value.status_code == 400
     assert db.query(IntentoPublico).filter(IntentoPublico.reason == "challenge_reused").count() == 1
+
+
+def test_envio_demasiado_rapido_no_consume_nonce(db, monkeypatch):
+    configurar(monkeypatch, modo="enforce", espera=3)
+    reloj = {"ahora": 1_000_000}
+    monkeypatch.setattr("app.core.desafio_formulario.time.time", lambda: reloj["ahora"])
+    service = FormularioGuardService(db)
+    challenge = service.crear_desafio()
+
+    with pytest.raises(HTTPException) as error:
+        service.reservar(request_publico(), datos(challenge["token"]))
+
+    assert error.value.status_code == 429
+    assert error.value.headers["Retry-After"] == "3"
+    assert db.query(IntentoPublico).one().nonce_hash is None
+
+    reloj["ahora"] += 3
+    intento = service.reservar(request_publico(), datos(challenge["token"]))
+    assert intento.allowed is True
+    assert intento.reason == "ok"
 
 
 def test_liberar_permita_reintento_si_falla_negocio(db, monkeypatch):
@@ -140,6 +175,37 @@ def test_cuota_durable_devuelve_ventana_real(db, monkeypatch):
 
     assert error.value.status_code == 429
     assert 3500 <= int(error.value.headers["Retry-After"]) <= 3600
+
+
+def test_cuota_con_exceso_calcula_salida_real_del_umbral(db, monkeypatch):
+    configurar(monkeypatch, modo="enforce")
+    monkeypatch.setattr("app.repositories.intento_publico_repository.LIMITE_IP_HORA", 3)
+    service = FormularioGuardService(db)
+    request = request_publico()
+    ip_hash = service._seudonimo("ip", service._ip(request))
+    ahora = datetime.now(timezone.utc)
+
+    for minutos in (50, 40, 30, 20, 10):
+        db.add(
+            IntentoPublico(
+                ip_hash=ip_hash,
+                contact_hash=None,
+                client_hash=None,
+                nonce_hash=None,
+                allowed=True,
+                mode="monitor",
+                reason="ok",
+                created_at=ahora - timedelta(minutes=minutos),
+            )
+        )
+    db.commit()
+
+    challenge = service.crear_desafio()
+    with pytest.raises(HTTPException) as error:
+        service.reservar(request, datos(challenge["token"]))
+
+    assert error.value.status_code == 429
+    assert 1790 <= int(error.value.headers["Retry-After"]) <= 1810
 
 
 def test_usa_ip_agregada_por_el_proxy(db, monkeypatch):
