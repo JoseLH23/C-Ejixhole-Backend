@@ -51,11 +51,12 @@ test("portal → API v1 → panel → caja → pago → check-in → check-out",
     await portal.getByRole("button", { name: /Continuar/i }).click();
 
     const formulario = portal.locator("form");
-    const entradas = formulario.locator("input");
-    await entradas.nth(0).fill(nombreCliente);
-    await formulario.locator('input[type="email"]').fill(emailCliente);
-    await entradas.nth(2).fill("4441234567");
-    await formulario.locator("textarea").fill("Flujo automático controlado; no es una reservación real.");
+    await formulario.getByLabel("Nombre completo").fill(nombreCliente);
+    await formulario.getByLabel("Correo electrónico").fill(emailCliente);
+    await formulario.getByLabel("Número de teléfono").fill("4441234567");
+    await formulario
+      .getByLabel("Notas adicionales (opcional)")
+      .fill("Flujo automático controlado; no es una reservación real.");
 
     const solicitud = portal.waitForResponse(
       (respuesta) =>
