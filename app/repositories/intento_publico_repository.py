@@ -50,8 +50,12 @@ class IntentoPublicoRepository:
         )
         if len(rows) < limit:
             return False, None
-        oldest = self._aware(rows[0].created_at)
-        seconds = max(1, math.ceil((oldest + window - now).total_seconds()))
+
+        # Si monitor dejó más filas que el límite, esperar hasta que caduque
+        # la fila cuya salida realmente deja el conteo por debajo del umbral.
+        threshold_row = rows[len(rows) - limit]
+        threshold_created_at = self._aware(threshold_row.created_at)
+        seconds = max(1, math.ceil((threshold_created_at + window - now).total_seconds()))
         return True, seconds
 
     def reservar(
@@ -87,8 +91,14 @@ class IntentoPublicoRepository:
             if exceeded:
                 motivo, reintentar_en = label, seconds
 
-        permitido = motivo is None or modo == "monitor"
-        stored_nonce = None if motivo == "challenge_reused" else nonce_hash
+        # El modo monitor conserva compatibilidad para desafíos y cuotas, pero
+        # un honeypot lleno es una señal explícita y siempre debe bloquearse.
+        bloqueo_duro = motivo == "honeypot_filled"
+        permitido = motivo is None or (modo == "monitor" and not bloqueo_duro)
+
+        # Una respuesta "demasiado rápida" es reintentable con el mismo token.
+        # No consumir su nonce hasta que la espera mínima se haya cumplido.
+        stored_nonce = None if motivo in {"challenge_reused", "challenge_too_fast"} else nonce_hash
         intento = IntentoPublico(
             ip_hash=ip_hash,
             contact_hash=contact_hash,
