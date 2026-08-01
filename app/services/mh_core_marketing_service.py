@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -12,6 +13,12 @@ from pydantic import ValidationError
 
 from app.core.mh_core_client_auth import cabeceras_mh_core, obtener_credencial_mh_core
 from app.schemas.marketing import MarketingCampaignOut
+
+
+_RETRYABLE_UPSTREAM_STATUS = {502, 503, 504}
+_INITIAL_RETRY_DELAY_SECONDS = 1.0
+_MAX_RETRY_DELAY_SECONDS = 8.0
+_MAX_ATTEMPT_TIMEOUT_SECONDS = 20.0
 
 
 def _marketing_timeout_seconds() -> float:
@@ -26,6 +33,43 @@ def _marketing_timeout_seconds() -> float:
     if not 1 <= timeout <= 120:
         raise RuntimeError("MH_CORE_MARKETING_TIMEOUT_SECONDS debe estar entre 1 y 120 segundos.")
     return timeout
+
+
+def _abrir_con_reintentos(request: Request, total_timeout: float):
+    """Tolera el proxy temporal de una instancia gratuita mientras despierta.
+
+    El presupuesto total permanece acotado por ``total_timeout``. Los errores de
+    autenticación o validación nunca se reintentan.
+    """
+    deadline = time.monotonic() + total_timeout
+    retry_delay = _INITIAL_RETRY_DELAY_SECONDS
+    last_error: HTTPError | URLError | TimeoutError | None = None
+
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        attempt_timeout = max(1.0, min(_MAX_ATTEMPT_TIMEOUT_SECONDS, remaining))
+
+        try:
+            return urlopen(request, timeout=attempt_timeout)
+        except HTTPError as exc:
+            if exc.code not in _RETRYABLE_UPSTREAM_STATUS:
+                raise
+            last_error = exc
+            exc.close()
+        except (URLError, TimeoutError) as exc:
+            last_error = exc
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(retry_delay, remaining))
+        retry_delay = min(retry_delay * 2, _MAX_RETRY_DELAY_SECONDS)
+
+    if last_error is not None:
+        raise last_error
+    raise TimeoutError("Se agotó el tiempo de conexión con Marketing.")
 
 
 class MhCoreMarketingService:
@@ -63,7 +107,7 @@ class MhCoreMarketingService:
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with _abrir_con_reintentos(request, self.timeout_seconds) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             if exc.code in {401, 403}:
