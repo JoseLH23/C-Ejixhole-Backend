@@ -57,6 +57,36 @@ def test_error_de_autorizacion_no_se_disfraza_como_arranque(monkeypatch):
     assert result["message"] == "La conexión privada con Marketing no está autorizada."
 
 
+def test_error_permanente_de_servidor_no_se_disfraza_como_arranque(monkeypatch):
+    service = _service(monkeypatch)
+    monkeypatch.setattr(service, "_despertar_servicio", lambda: None)
+
+    def fake_request(method, path, *, payload=None, total_timeout=None):
+        raise HTTPException(status_code=502, detail="MH-Core respondió con estado 500.")
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    result = service.obtener_estado()
+
+    assert result["warming_up"] is False
+    assert result["message"] == "MH-Core respondió con estado 500."
+
+
+def test_respuesta_corrupta_no_se_disfraza_como_arranque(monkeypatch):
+    service = _service(monkeypatch)
+    monkeypatch.setattr(service, "_despertar_servicio", lambda: None)
+
+    def fake_request(method, path, *, payload=None, total_timeout=None):
+        raise HTTPException(status_code=502, detail="MH-Core devolvió una respuesta inesperada.")
+
+    monkeypatch.setattr(service, "_request", fake_request)
+
+    result = service.obtener_estado()
+
+    assert result["warming_up"] is False
+    assert result["message"] == "MH-Core devolvió una respuesta inesperada."
+
+
 def test_status_disponible_cierra_estado_de_arranque(monkeypatch):
     service = _service(monkeypatch)
     monkeypatch.setattr(service, "_despertar_servicio", lambda: None)
