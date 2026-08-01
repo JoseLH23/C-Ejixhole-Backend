@@ -9,23 +9,25 @@ from urllib.request import Request, urlopen
 
 from fastapi import HTTPException
 
+from app.core.mh_core_client_auth import cabeceras_mh_core, obtener_credencial_mh_core
+
 
 class MhCoreDashboardService:
     def __init__(self) -> None:
         self.base_url = os.getenv("MH_CORE_URL", "https://mh-core.onrender.com").rstrip("/")
-        self.api_key = os.getenv("MH_CORE_API_KEY", "").strip()
+        self.credential = obtener_credencial_mh_core()
         self.timeout_seconds = float(os.getenv("MH_CORE_TIMEOUT_SECONDS", "20"))
         environment = os.getenv("ENVIRONMENT", "production").strip().lower()
         if environment == "production" and urlparse(self.base_url).scheme != "https":
             raise RuntimeError("MH_CORE_URL debe usar HTTPS en producción.")
 
     def _request(self, method: str, path: str, *, params: dict[str, object], required_key: str) -> dict:
-        if not self.api_key:
+        if self.credential is None:
             raise HTTPException(status_code=503, detail="La integración con MH-Core todavía no está configurada.")
         query = f"?{urlencode(params)}" if params else ""
         request = Request(
             f"{self.base_url}{path}{query}",
-            headers={"X-API-Key": self.api_key, "Accept": "application/json"},
+            headers=cabeceras_mh_core(self.credential),
             method=method,
         )
         try:
