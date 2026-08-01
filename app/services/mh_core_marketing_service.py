@@ -14,11 +14,25 @@ from app.core.mh_core_client_auth import cabeceras_mh_core, obtener_credencial_m
 from app.schemas.marketing import MarketingCampaignOut
 
 
+def _marketing_timeout_seconds() -> float:
+    raw = os.getenv(
+        "MH_CORE_MARKETING_TIMEOUT_SECONDS",
+        os.getenv("MH_CORE_TIMEOUT_SECONDS", "75"),
+    )
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("MH_CORE_MARKETING_TIMEOUT_SECONDS debe ser numérico.") from exc
+    if not 1 <= timeout <= 120:
+        raise RuntimeError("MH_CORE_MARKETING_TIMEOUT_SECONDS debe estar entre 1 y 120 segundos.")
+    return timeout
+
+
 class MhCoreMarketingService:
     def __init__(self) -> None:
         self.base_url = os.getenv("MH_CORE_URL", "https://mh-core.onrender.com").rstrip("/")
         self.credential = obtener_credencial_mh_core()
-        self.timeout_seconds = float(os.getenv("MH_CORE_TIMEOUT_SECONDS", "20"))
+        self.timeout_seconds = _marketing_timeout_seconds()
         environment = os.getenv("ENVIRONMENT", "production").strip().lower()
         if environment == "production" and urlparse(self.base_url).scheme != "https":
             raise RuntimeError("MH_CORE_URL debe usar HTTPS en producción.")
