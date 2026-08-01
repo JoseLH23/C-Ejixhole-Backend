@@ -64,11 +64,12 @@ def test_reintenta_502_temporal_y_recupera_conexion(monkeypatch):
 
 def test_no_reintenta_error_de_autenticacion(monkeypatch):
     _configure(monkeypatch)
-    calls = 0
+    urls: list[str] = []
 
     def fake_urlopen(request, timeout):
-        nonlocal calls
-        calls += 1
+        urls.append(request.full_url)
+        if request.full_url.endswith("/health/live"):
+            return _FakeResponse({"status": "ok"})
         raise HTTPError(
             request.full_url,
             401,
@@ -81,6 +82,8 @@ def test_no_reintenta_error_de_autenticacion(monkeypatch):
 
     result = MhCoreMarketingService().obtener_estado()
 
-    assert calls == 1
+    assert urls.count("http://mh-core.test/health/live") == 1
+    assert urls.count("http://mh-core.test/mindhigh/marketing/status") == 1
     assert result["available"] is False
+    assert result["warming_up"] is False
     assert result["message"] == "La conexión privada con Marketing no está autorizada."

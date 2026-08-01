@@ -16,9 +16,17 @@ from app.schemas.marketing import MarketingCampaignOut
 
 
 _RETRYABLE_UPSTREAM_STATUS = {502, 503, 504}
+_TRANSIENT_STATUS_DETAILS = {
+    "MH-Core respondió con estado 502.",
+    "MH-Core respondió con estado 503.",
+    "MH-Core respondió con estado 504.",
+    "Marketing no está disponible temporalmente.",
+}
 _INITIAL_RETRY_DELAY_SECONDS = 1.0
 _MAX_RETRY_DELAY_SECONDS = 8.0
 _MAX_ATTEMPT_TIMEOUT_SECONDS = 20.0
+_STATUS_TOTAL_TIMEOUT_SECONDS = 4.0
+_WAKE_TIMEOUT_SECONDS = 1.5
 
 
 def _marketing_timeout_seconds() -> float:
@@ -36,11 +44,7 @@ def _marketing_timeout_seconds() -> float:
 
 
 def _abrir_con_reintentos(request: Request, total_timeout: float):
-    """Tolera el proxy temporal de una instancia gratuita mientras despierta.
-
-    El presupuesto total permanece acotado por ``total_timeout``. Los errores de
-    autenticación o validación nunca se reintentan.
-    """
+    """Tolera errores temporales sin reintentar autenticación ni validación."""
     deadline = time.monotonic() + total_timeout
     retry_delay = _INITIAL_RETRY_DELAY_SECONDS
     last_error: HTTPError | URLError | TimeoutError | None = None
@@ -81,12 +85,28 @@ class MhCoreMarketingService:
         if environment == "production" and urlparse(self.base_url).scheme != "https":
             raise RuntimeError("MH_CORE_URL debe usar HTTPS en producción.")
 
+    def _despertar_servicio(self) -> None:
+        """Dispara el arranque de Render sin bloquear una función de Vercel."""
+        request = Request(
+            f"{self.base_url}/health/live",
+            headers={"User-Agent": "Ejixhole-Backend/Marketing-Wakeup"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=_WAKE_TIMEOUT_SECONDS):
+                return
+        except (HTTPError, URLError, TimeoutError):
+            # El primer intento puede terminar en timeout/502 mientras Render despierta.
+            # Haber enviado la solicitud es suficiente; el panel volverá a consultar.
+            return
+
     def _request(
         self,
         method: str,
         path: str,
         *,
         payload: dict | None = None,
+        total_timeout: float | None = None,
     ) -> dict:
         if self.credential is None:
             raise HTTPException(
@@ -107,7 +127,10 @@ class MhCoreMarketingService:
             method=method,
         )
         try:
-            with _abrir_con_reintentos(request, self.timeout_seconds) as response:
+            with _abrir_con_reintentos(
+                request,
+                total_timeout if total_timeout is not None else self.timeout_seconds,
+            ) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             if exc.code in {401, 403}:
@@ -142,31 +165,50 @@ class MhCoreMarketingService:
             )
         return result
 
+    @staticmethod
+    def _es_arranque_temporal(exc: HTTPException) -> bool:
+        return isinstance(exc.detail, str) and exc.detail in _TRANSIENT_STATUS_DETAILS
+
     def obtener_estado(self) -> dict:
         if self.credential is None:
             return {
                 "configured": False,
                 "available": False,
+                "warming_up": False,
                 "knowledge_version": None,
                 "documents": 0,
                 "message": "El módulo está preparado, pero MH-Core todavía no está configurado.",
             }
 
+        self._despertar_servicio()
         try:
-            result = self._request("GET", "/mindhigh/marketing/status")
+            result = self._request(
+                "GET",
+                "/mindhigh/marketing/status",
+                total_timeout=min(_STATUS_TOTAL_TIMEOUT_SECONDS, self.timeout_seconds),
+            )
         except HTTPException as exc:
+            warming_up = self._es_arranque_temporal(exc)
             return {
                 "configured": True,
                 "available": False,
+                "warming_up": warming_up,
                 "knowledge_version": None,
                 "documents": 0,
-                "message": exc.detail if isinstance(exc.detail, str) else "Marketing no está disponible.",
+                "message": (
+                    "Marketing está despertando. Esta pantalla se actualizará automáticamente."
+                    if warming_up
+                    else exc.detail
+                    if isinstance(exc.detail, str)
+                    else "Marketing no está disponible."
+                ),
             }
 
         available = result.get("available") is True
         return {
             "configured": True,
             "available": available,
+            "warming_up": False,
             "knowledge_version": result.get("knowledge_version") if available else None,
             "documents": int(result.get("documents") or 0) if available else 0,
             "message": (
