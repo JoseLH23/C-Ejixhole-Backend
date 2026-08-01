@@ -8,14 +8,16 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from fastapi import HTTPException
+from pydantic import ValidationError
+
+from app.core.mh_core_client_auth import cabeceras_mh_core, obtener_credencial_mh_core
+from app.schemas.marketing import MarketingCampaignOut
 
 
 class MhCoreMarketingService:
-    SERVICE_ID = "ejixhole-backend"
-
     def __init__(self) -> None:
         self.base_url = os.getenv("MH_CORE_URL", "https://mh-core.onrender.com").rstrip("/")
-        self.api_key = os.getenv("MH_CORE_SERVICE_KEY", "").strip()
+        self.credential = obtener_credencial_mh_core()
         self.timeout_seconds = float(os.getenv("MH_CORE_TIMEOUT_SECONDS", "20"))
         environment = os.getenv("ENVIRONMENT", "production").strip().lower()
         if environment == "production" and urlparse(self.base_url).scheme != "https":
@@ -28,18 +30,14 @@ class MhCoreMarketingService:
         *,
         payload: dict | None = None,
     ) -> dict:
-        if not self.api_key:
+        if self.credential is None:
             raise HTTPException(
                 status_code=503,
                 detail="La integración con Marketing todavía no está configurada.",
             )
 
         data = None
-        headers = {
-            "X-Service-ID": self.SERVICE_ID,
-            "X-API-Key": self.api_key,
-            "Accept": "application/json",
-        }
+        headers = cabeceras_mh_core(self.credential)
         if payload is not None:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -87,7 +85,7 @@ class MhCoreMarketingService:
         return result
 
     def obtener_estado(self) -> dict:
-        if not self.api_key:
+        if self.credential is None:
             return {
                 "configured": False,
                 "available": False,
@@ -126,16 +124,11 @@ class MhCoreMarketingService:
             "/mindhigh/marketing/campaigns/draft",
             payload=brief,
         )
-        required = {
-            "name",
-            "knowledge_version",
-            "knowledge_citations",
-            "requires_human_approval",
-            "contents",
-        }
-        if not required.issubset(result):
+        try:
+            campaign = MarketingCampaignOut.model_validate(result)
+        except ValidationError as exc:
             raise HTTPException(
                 status_code=502,
                 detail="MH-Core devolvió una campaña incompleta.",
-            )
-        return result
+            ) from exc
+        return campaign.model_dump(mode="json")
