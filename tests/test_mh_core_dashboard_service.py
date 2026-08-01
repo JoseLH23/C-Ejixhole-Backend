@@ -22,7 +22,7 @@ class FakeResponse:
 
 
 def test_rechaza_integracion_sin_api_key(monkeypatch):
-    monkeypatch.delenv("MH_CORE_API_KEY", raising=False)
+    monkeypatch.delenv("MH_CORE_SERVICE_KEY", raising=False)
     service = MhCoreDashboardService()
 
     with pytest.raises(HTTPException) as error:
@@ -31,13 +31,14 @@ def test_rechaza_integracion_sin_api_key(monkeypatch):
     assert error.value.status_code == 503
 
 
-def test_envia_clave_solo_desde_backend(monkeypatch):
-    monkeypatch.setenv("MH_CORE_API_KEY", "clave-servidor-segura")
+def test_envia_identidad_y_clave_solo_desde_backend(monkeypatch):
+    monkeypatch.setenv("MH_CORE_SERVICE_KEY", "clave-servidor-segura")
     captured = {}
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["key"] = request.headers["X-api-key"]
+        captured["service_id"] = request.headers["X-service-id"]
         captured["timeout"] = timeout
         return FakeResponse({"kpis": {"net_revenue": "100.00"}, "alerts": []})
 
@@ -47,15 +48,17 @@ def test_envia_clave_solo_desde_backend(monkeypatch):
     assert result["kpis"]["net_revenue"] == "100.00"
     assert captured["url"].endswith("executive-dashboard?days=14")
     assert captured["key"] == "clave-servidor-segura"
+    assert captured["service_id"] == "ejixhole-backend"
 
 
-def test_consulta_predicciones_sin_exponer_clave(monkeypatch):
-    monkeypatch.setenv("MH_CORE_API_KEY", "clave-servidor-segura")
+def test_consulta_predicciones_con_identidad_sin_exponer_clave(monkeypatch):
+    monkeypatch.setenv("MH_CORE_SERVICE_KEY", "clave-servidor-segura")
     captured = {}
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["key"] = request.headers["X-api-key"]
+        captured["service_id"] = request.headers["X-service-id"]
         return FakeResponse({"predictions": {"expected_visitors": 24}, "confidence": "medium"})
 
     monkeypatch.setattr("app.services.mh_core_dashboard_service.urlopen", fake_urlopen)
@@ -64,3 +67,4 @@ def test_consulta_predicciones_sin_exponer_clave(monkeypatch):
     assert result["predictions"]["expected_visitors"] == 24
     assert captured["url"].endswith("predictions?days=7")
     assert captured["key"] == "clave-servidor-segura"
+    assert captured["service_id"] == "ejixhole-backend"
