@@ -11,9 +11,11 @@ from fastapi import HTTPException
 
 
 class MhCoreDashboardService:
+    SERVICE_ID = "ejixhole-backend"
+
     def __init__(self) -> None:
         self.base_url = os.getenv("MH_CORE_URL", "https://mh-core.onrender.com").rstrip("/")
-        self.api_key = os.getenv("MH_CORE_API_KEY", "").strip()
+        self.api_key = os.getenv("MH_CORE_SERVICE_KEY", "").strip()
         self.timeout_seconds = float(os.getenv("MH_CORE_TIMEOUT_SECONDS", "20"))
         environment = os.getenv("ENVIRONMENT", "production").strip().lower()
         if environment == "production" and urlparse(self.base_url).scheme != "https":
@@ -25,7 +27,11 @@ class MhCoreDashboardService:
         query = f"?{urlencode(params)}" if params else ""
         request = Request(
             f"{self.base_url}{path}{query}",
-            headers={"X-API-Key": self.api_key, "Accept": "application/json"},
+            headers={
+                "X-Service-ID": self.SERVICE_ID,
+                "X-API-Key": self.api_key,
+                "Accept": "application/json",
+            },
             method=method,
         )
         try:
