@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -175,7 +176,7 @@ class _FakeResponse:
 def test_cliente_envia_identidad_y_json_a_mh_core(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("MH_CORE_URL", "http://mh-core.test")
-    monkeypatch.setenv("MH_CORE_SERVICE_KEY", "service-key-test")
+    monkeypatch.setenv("MH_CORE_EJIXHOLE_KEY", "ejixhole-outbound-key-test")
     captured: dict = {}
 
     def fake_urlopen(request, timeout):
@@ -192,6 +193,57 @@ def test_cliente_envia_identidad_y_json_a_mh_core(monkeypatch):
     headers = {key.lower(): value for key, value in captured["headers"].items()}
     assert captured["url"] == "http://mh-core.test/mindhigh/marketing/campaigns/draft"
     assert headers["x-service-id"] == "ejixhole-backend"
-    assert headers["x-api-key"] == "service-key-test"
+    assert headers["x-api-key"] == "ejixhole-outbound-key-test"
     assert captured["payload"]["objective"] == "impulsar_reservas"
     assert result["knowledge_version"] == "2026.07.3"
+
+
+def test_cliente_consulta_estado_minimo_de_marketing(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("MH_CORE_URL", "http://mh-core.test")
+    monkeypatch.setenv("MH_CORE_EJIXHOLE_KEY", "ejixhole-outbound-key-test")
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        return _FakeResponse(
+            {
+                "configured": True,
+                "available": True,
+                "knowledge_version": "2026.07.3",
+                "documents": 11,
+            }
+        )
+
+    monkeypatch.setattr("app.services.mh_core_marketing_service.urlopen", fake_urlopen)
+
+    result = MhCoreMarketingService().obtener_estado()
+
+    assert captured["url"] == "http://mh-core.test/mindhigh/marketing/status"
+    assert result["available"] is True
+    assert result["documents"] == 11
+
+
+def test_cliente_rechaza_campana_incompleta_con_502(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("MH_CORE_URL", "http://mh-core.test")
+    monkeypatch.setenv("MH_CORE_EJIXHOLE_KEY", "ejixhole-outbound-key-test")
+
+    monkeypatch.setattr(
+        "app.services.mh_core_marketing_service.urlopen",
+        lambda request, timeout: _FakeResponse(
+            {
+                "name": "Campaña incompleta",
+                "knowledge_version": "2026.07.3",
+                "knowledge_citations": [],
+                "requires_human_approval": True,
+                "contents": [],
+            }
+        ),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        MhCoreMarketingService().crear_borrador(_brief())
+
+    assert error.value.status_code == 502
+    assert error.value.detail == "MH-Core devolvió una campaña incompleta."
