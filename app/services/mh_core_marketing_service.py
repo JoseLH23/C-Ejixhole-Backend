@@ -97,7 +97,7 @@ class MhCoreMarketingService:
             }
 
         try:
-            result = self._request("GET", "/knowledge/status")
+            result = self._request("GET", "/mindhigh/marketing/status")
         except HTTPException as exc:
             return {
                 "configured": True,
