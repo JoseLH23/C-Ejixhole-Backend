@@ -43,6 +43,7 @@ class CampaignBriefIn(BaseModel):
 class MarketingStatusOut(BaseModel):
     configured: bool
     available: bool
+    warming_up: bool = False
     knowledge_version: str | None = None
     documents: int = 0
     message: str
