@@ -16,6 +16,12 @@ from app.schemas.marketing import MarketingCampaignOut
 
 
 _RETRYABLE_UPSTREAM_STATUS = {502, 503, 504}
+_TRANSIENT_STATUS_DETAILS = {
+    "MH-Core respondió con estado 502.",
+    "MH-Core respondió con estado 503.",
+    "MH-Core respondió con estado 504.",
+    "Marketing no está disponible temporalmente.",
+}
 _INITIAL_RETRY_DELAY_SECONDS = 1.0
 _MAX_RETRY_DELAY_SECONDS = 8.0
 _MAX_ATTEMPT_TIMEOUT_SECONDS = 20.0
@@ -161,9 +167,7 @@ class MhCoreMarketingService:
 
     @staticmethod
     def _es_arranque_temporal(exc: HTTPException) -> bool:
-        if exc.status_code == 502:
-            return True
-        return exc.status_code == 503 and exc.detail == "Marketing no está disponible temporalmente."
+        return isinstance(exc.detail, str) and exc.detail in _TRANSIENT_STATUS_DETAILS
 
     def obtener_estado(self) -> dict:
         if self.credential is None:
